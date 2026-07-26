@@ -1,0 +1,80 @@
+{
+  "name": "职块 Job Block",
+  "nameEn": "Job Block",
+  "version": "0.1.0",
+  "tagline": "Web3 求职 Agent：多源扫岗 · Hybrid 匹配 · 材料草稿 · 线下活动",
+  "description": "职块（Job Block）是面向 Web3 的求职 Agent。聚合 web3.career、DeJob、Telegram 招聘帖，用 Embedding 粗筛 + LLM 结构化精排生成可解释 shortlist；支持 BD / Community / Research / Security / Product 等多角色画像；提供单岗深评、简历与冷信草稿（不自动投递）、申请追踪，以及基于 Luma 的城市线下 networking 发现。设计兼容后续 OKX AI ASP 上架与 Task Marketplace 服务封装。",
+  "roles": ["BD", "Community", "Research", "Security", "Product", "Engineering"],
+  "capabilities": [
+    {
+      "id": "scan_jobs",
+      "name": "扫描 Web3 岗位",
+      "description": "从 web3.career、dejob.ai 拉取最新岗位并去重入库"
+    },
+    {
+      "id": "rank_shortlist",
+      "name": "Hybrid 匹配 shortlist",
+      "description": "硬过滤 + Embedding 召回 Top50 + LLM 精排，输出 Top5-15 与匹配理由"
+    },
+    {
+      "id": "evaluate_job",
+      "name": "单岗深度评估",
+      "description": "六块评估 + scam/风险标记"
+    },
+    {
+      "id": "tailor_materials",
+      "name": "申请材料草稿",
+      "description": "定制简历要点、cover、冷启动私信（仅草稿）"
+    },
+    {
+      "id": "discover_events",
+      "name": "线下活动发现",
+      "description": "按城市/类型发现 Luma 等 Web3 networking 活动并生成破冰稿"
+    },
+    {
+      "id": "track_pipeline",
+      "name": "申请管道追踪",
+      "description": "状态机 + outcome 校准建议"
+    }
+  ],
+  "safety": {
+    "auto_apply": false,
+    "human_in_the_loop": true,
+    "untrusted_jd": true
+  },
+  "runtime": {
+    "type": "cli",
+    "entrypoint": "npx tsx src/cli.ts",
+    "language": "typescript",
+    "node": ">=18"
+  },
+  "data_sources": {
+    "jobs": [
+      "https://web3.career",
+      "https://www.dejob.ai/job",
+      "https://t.me/DeJob_official"
+    ],
+    "events": ["https://luma.com"]
+  },
+  "okx": {
+    "suggested_asp_services": [
+      {
+        "name": "Web3 Job Shortlist",
+        "type": "api",
+        "description": "上传画像摘要，返回匹配 shortlist JSON"
+      },
+      {
+        "name": "Job Eval Report",
+        "type": "api",
+        "description": "给定 JD，返回深评 Markdown"
+      },
+      {
+        "name": "City Networking Events",
+        "type": "api",
+        "description": "按城市返回 Web3 活动列表与破冰草稿"
+      }
+    ],
+    "upload_notes": "docs/OKX-ASP.md",
+    "chain": "XLayer"
+  }
+}

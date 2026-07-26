@@ -1,0 +1,78 @@
+# Render Blueprint — 职块 Job Block
+# 文档: https://render.com/docs/blueprint-spec
+#
+# 部署后请在 Dashboard 填好 sync:false 的密钥，并把
+# JOB_BLOCK_PUBLIC_URL 设为服务公网地址（或依赖 RENDER_EXTERNAL_URL）。
+#
+# 本地联调仍用: npm run web
+
+services:
+  - type: web
+    name: job-block
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: .
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:web
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "20"
+
+      # 数据写持久盘（与下方 disk.mountPath 一致）
+      - key: JOB_BLOCK_DATA_DIR
+        value: /var/data
+
+      # 生产关闭 dev 开通；需要演示时可在 Dashboard 临时改为 1
+      - key: JOB_BLOCK_DEV_AUTH
+        value: "0"
+
+      # 强制走支付挑战（无 X-PAYMENT 返回 402）
+      - key: JOB_BLOCK_REQUIRE_PAYMENT
+        value: "1"
+
+      # 公网根地址：首次部署后在 Dashboard 改成 https://xxx.onrender.com
+      # 也可不填，运行时会回退到 RENDER_EXTERNAL_URL
+      - key: JOB_BLOCK_PUBLIC_URL
+        sync: false
+
+      # LLM（简历结构化 / 精排；可选，不填则启发式）
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        value: https://api.openai.com/v1
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+
+      # Embedding（可选）
+      - key: EMBEDDING_API_KEY
+        sync: false
+      - key: EMBEDDING_BASE_URL
+        sync: false
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+
+      # OKX.AI / x402 收款（上架后填写）
+      - key: JOB_BLOCK_PAY_TO
+        sync: false
+      - key: JOB_BLOCK_NETWORK
+        value: eip155:196
+      - key: JOB_BLOCK_PRICE_USDC
+        value: "5"
+      - key: JOB_BLOCK_USDC_ADDRESS
+        sync: false
+
+      # X API（可选）
+      - key: TWITTER_BEARER_TOKEN
+        sync: false
+
+    # 持久化账号 / 门户 / 画像（Free 计划需确认是否支持 disk；不支持则去掉本段）
+    disk:
+      name: job-block-data
+      mountPath: /var/data
+      sizeGB: 1

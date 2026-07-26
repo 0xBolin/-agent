@@ -1,0 +1,77 @@
+display_name: Alex Chen
+target_titles:
+  - Business Development Manager
+  - Growth Lead
+  - Partnerships Manager
+primary_role: BD
+secondary_roles:
+  - Community
+resume_text: |
+  Alex Chen — Web3 BD / Growth
+  4 years in crypto partnerships across SEA.
+  Led 3 protocol listings and regional BD pipelines.
+  Channels: Telegram KOL, exchange BD, wallet integrations.
+  Languages: Mandarin, English.
+  Skills: BD, Partnerships, SEA markets, Growth, Community ops.
+experience_years: 4
+level: senior
+languages:
+  - 中文
+  - English
+summary: Web3 BD，深耕东南亚市场，有钱包与交易所渠道合作经验。
+highlights:
+  - 主导 3 个协议东南亚 listing / 合作
+  - 搭建 KOL 与社区增长漏斗
+  - 覆盖新加坡 / 香港渠道网络
+skills:
+  - BD
+  - Partnerships
+  - SEA
+  - Telegram
+  - Growth
+  - English
+location_pref:
+  cities:
+    - Singapore
+    - Hong Kong
+  remote_ok: true
+  hybrid_ok: true
+  onsite_ok: false
+comp_pref:
+  min_base_fiat: 4000
+  currency: USD
+  token_ok: true
+  token_only_ok: false
+  equity_ok: true
+sectors_whitelist:
+  - DeFi
+  - Wallet
+  - Exchange
+  - Infrastructure
+sectors_blacklist:
+  - gambling
+deal_breakers:
+  - token only
+  - pay to apply
+company_types:
+  - Exchange
+  - Wallet
+  - L1/L2 Protocol
+  - Growth-stage
+timezone: UTC+8
+discrete_mode: true
+alert_frequency: weekly
+event_cities:
+  - Singapore
+  - Hong Kong
+role_extensions:
+  regions:
+    - SEA
+    - HK
+  channels:
+    - Telegram
+    - KOL
+    - Exchange BD
+writing_style: 简洁专业，偏结果导向
+setup_completed: true
+updated_at: "2026-07-26T00:00:00.000Z"
