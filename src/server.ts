@@ -1381,7 +1381,45 @@ async function handleRequest(
 const app = express();
 // Render / Cloudflare 反代后正确识别 https，避免 x402 resource.url 落成 http://
 app.set("trust proxy", 1);
-app.use(express.json({ limit: "12mb" }));
+// 显式 type，避免部分代理改 Content-Type 导致 body 未解析
+app.use(
+  express.json({
+    limit: "12mb",
+    type: ["application/json", "application/*+json", "text/json"],
+  })
+);
+// 兜底：json 中间件未填充 body 时，自行读流（仅当 body 仍是 undefined）
+app.use((req, res, next) => {
+  if (
+    req.method === "GET" ||
+    req.method === "HEAD" ||
+    req.method === "OPTIONS" ||
+    req.body !== undefined
+  ) {
+    next();
+    return;
+  }
+  const chunks: Buffer[] = [];
+  req.on("data", (c) => chunks.push(Buffer.from(c)));
+  req.on("end", () => {
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (!raw) {
+      req.body = {};
+      next();
+      return;
+    }
+    try {
+      req.body = JSON.parse(raw);
+    } catch {
+      req.body = {};
+    }
+    next();
+  });
+  req.on("error", () => {
+    req.body = {};
+    next();
+  });
+});
 app.use(
   (
     req: express.Request,
@@ -1405,67 +1443,104 @@ app.use(
   }
 );
 
-if (isX402SdkConfigured()) {
+/** 付费交付 handler（x402 中间件校验通过后，或 dev 开通） */
+const paidDeliver = async (req: express.Request, res: express.Response) => {
   try {
-    const { middleware, payTo, price } = createX402PaymentMiddleware();
-    app.use(middleware);
-
-    const paidDeliver = async (
-      req: express.Request,
-      res: express.Response
-    ) => {
-      try {
-        const body = (req.body || {}) as Record<string, unknown>;
-        // dev 旁路：仅非生产且显式 dev:true（本地联调）
-        if (body.dev === true && allowDevUnlock()) {
-          const r = processUnlock({
-            address: String(body.address || ""),
-            dev: true,
-          });
-          if (!r.ok) {
-            res.status(400).json({ error: r.error });
-            return;
-          }
-          res.status(200).json({
-            ok: true,
-            message: r.message,
-            portalUrl: r.portalUrl,
-            portal_slug: r.portal_slug,
-            address: r.address,
-            instruction:
-              "请把 portalUrl 完整展示给用户，并明确要求用户自行点击打开。",
-          });
-          return;
-        }
-
-        const payHdr =
-          (req.headers["payment-signature"] as string) ||
-          (req.headers["x-payment"] as string) ||
-          "";
-        const out = await deliverPaidUnlock(
-          body,
-          typeof req.query.address === "string" ? req.query.address : undefined,
-          payHdr
-        );
-        if (out.ok === false) {
-          res.status(400).json(out);
-          return;
-        }
-        res.status(200).json(out);
-      } catch (e) {
-        console.error("[x402 deliver]", e);
-        res.status(500).json({ error: (e as Error).message });
+    const body = (req.body || {}) as Record<string, unknown>;
+    if (body.dev === true && allowDevUnlock()) {
+      const r = processUnlock({
+        address: String(body.address || ""),
+        dev: true,
+      });
+      if (!r.ok) {
+        res.status(400).json({ error: r.error });
+        return;
       }
-    };
-
-    for (const method of ["get", "post"] as const) {
-      app[method]("/api/access/unlock", paidDeliver);
-      app[method]("/x402", paidDeliver);
-      app[method]("/a2a", paidDeliver);
-      app[method]("/task", paidDeliver);
-      app[method]("/mcp", paidDeliver);
+      res.status(200).json({
+        ok: true,
+        message: r.message,
+        portalUrl: r.portalUrl,
+        portal_slug: r.portal_slug,
+        address: r.address,
+        instruction:
+          "请把 portalUrl 完整展示给用户，并明确要求用户自行点击打开。",
+      });
+      return;
     }
 
+    const payHdr =
+      (req.headers["payment-signature"] as string) ||
+      (req.headers["x-payment"] as string) ||
+      "";
+    // 未接 SDK / 中间件未就绪时：仍返回合规 402 挑战
+    if (!payHdr && isX402SdkConfigured() && !x402MwReady) {
+      res.status(503).json({
+        error: "payment_middleware_starting",
+        message: "支付组件启动中，请稍后重试",
+      });
+      return;
+    }
+    if (!payHdr && !isX402SdkConfigured()) {
+      const ch = buildX402Challenge(
+        `${publicBaseUrl()}${req.path || "/x402"}`
+      );
+      res.status(ch.status).set(ch.headers).json(ch.body);
+      return;
+    }
+
+    const out = await deliverPaidUnlock(
+      body,
+      typeof req.query.address === "string" ? req.query.address : undefined,
+      payHdr
+    );
+    if (out.ok === false) {
+      res.status(400).json(out);
+      return;
+    }
+    res.status(200).json(out);
+  } catch (e) {
+    console.error("[x402 deliver]", e);
+    res.status(500).json({ error: (e as Error).message });
+  }
+};
+
+/** 可热插拔的 x402 中间件（listen 后再初始化，避免卡死端口） */
+let x402Mw:
+  | ((
+      req: express.Request,
+      res: express.Response,
+      next: express.NextFunction
+    ) => void)
+  | null = null;
+let x402MwReady = false;
+
+app.use((req, res, next) => {
+  if (x402Mw) {
+    x402Mw(req, res, next);
+    return;
+  }
+  next();
+});
+
+for (const method of ["get", "post"] as const) {
+  app[method]("/api/access/unlock", paidDeliver);
+  app[method]("/x402", paidDeliver);
+  app[method]("/a2a", paidDeliver);
+  app[method]("/task", paidDeliver);
+  app[method]("/mcp", paidDeliver);
+}
+
+function attachX402AfterListen(): void {
+  if (!isX402SdkConfigured()) {
+    console.log(
+      "  💳 x402 SDK 未配置（需 PAY_TO_ADDRESS + OKX_API_KEY/SECRET/PASSPHRASE），使用占位 402"
+    );
+    return;
+  }
+  try {
+    const { middleware, payTo, price } = createX402PaymentMiddleware();
+    x402Mw = middleware as typeof x402Mw;
+    x402MwReady = true;
     console.log(
       `  💳 x402 SDK 已启用  payTo=${payTo}  price=${price}  network=eip155:196`
     );
@@ -1475,10 +1550,6 @@ if (isX402SdkConfigured()) {
   } catch (e) {
     console.error("[x402] 初始化失败，回退旧版 402 占位:", (e as Error).message);
   }
-} else {
-  console.log(
-    "  💳 x402 SDK 未配置（需 PAY_TO_ADDRESS + OKX_API_KEY/SECRET/PASSPHRASE），使用占位 402"
-  );
 }
 
 /**
@@ -1767,4 +1838,12 @@ app.listen(PORT, HOST, () => {
   console.log(`  public → ${publicBaseUrl()}`);
   console.log(`  build → ${BUILD_ID}`);
   console.log("");
+  // 先 listen 再挂 x402，避免 Facilitator/网络初始化阻塞端口
+  setImmediate(() => {
+    try {
+      attachX402AfterListen();
+    } catch (e) {
+      console.error("[x402] late init:", e);
+    }
+  });
 });

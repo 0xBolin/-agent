@@ -120,7 +120,14 @@ export function createX402PaymentMiddleware() {
   resourceServer.register(x402Network(), new ExactEvmScheme());
 
   const routes = x402RouteConfig();
-  const middleware = paymentMiddleware(routes, resourceServer);
+  // 第 5 参 false：启动时不阻塞同步 Facilitator（避免本机/冷启动卡住不 listen）
+  const middleware = paymentMiddleware(
+    routes,
+    resourceServer,
+    undefined,
+    undefined,
+    false
+  );
 
   return {
     middleware,
