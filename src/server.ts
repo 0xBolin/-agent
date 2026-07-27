@@ -169,22 +169,30 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
-/** 优先用 Express 已解析的 req.body，避免空 body / 二次 parse 丢字段 */
-function getJsonBody(req: http.IncomingMessage): Record<string, unknown> {
-  const withBody = req as http.IncomingMessage & { body?: unknown };
-  const b = withBody.body;
-  if (b && typeof b === "object" && !Buffer.isBuffer(b) && !Array.isArray(b)) {
-    return b as Record<string, unknown>;
-  }
-  if (typeof b === "string" && b.trim()) {
-    try {
-      const parsed = JSON.parse(b);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      /* fall through */
+/**
+ * 读取 JSON body。
+ * Express 挂载 express.json() 后，只要走过该中间件，req.body 就会存在（即便是 {}）。
+ * 绝不能在 body 已存在时再读流，否则必得空串 → Unexpected end of JSON input。
+ */
+function readJsonBodySync(req: http.IncomingMessage): Record<string, unknown> {
+  const r = req as http.IncomingMessage & { body?: unknown; _body?: boolean };
+  // Express 已解析：body 属性一定在（可能是 {}）
+  if (Object.prototype.hasOwnProperty.call(r, "body") || r._body === true) {
+    const b = r.body;
+    if (b && typeof b === "object" && !Buffer.isBuffer(b) && !Array.isArray(b)) {
+      return b as Record<string, unknown>;
     }
+    if (typeof b === "string" && b.trim()) {
+      try {
+        const parsed = JSON.parse(b);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        return {};
+      }
+    }
+    return {};
   }
   return {};
 }
@@ -192,20 +200,31 @@ function getJsonBody(req: http.IncomingMessage): Record<string, unknown> {
 async function readJsonBody(
   req: http.IncomingMessage
 ): Promise<Record<string, unknown>> {
-  const fromExpress = getJsonBody(req);
-  if (Object.keys(fromExpress).length > 0) return fromExpress;
-  const raw = await readBody(req);
-  if (!raw || !raw.trim()) return {};
+  const sync = readJsonBodySync(req);
+  // 已走过 express.json → 直接用，哪怕是空对象
+  const r = req as http.IncomingMessage & { body?: unknown; _body?: boolean };
+  if (Object.prototype.hasOwnProperty.call(r, "body") || r._body === true) {
+    return sync;
+  }
+  // 纯 Node 请求：读流
   try {
+    const raw = await readBody(req);
+    if (!raw || !raw.trim()) return {};
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>;
     }
   } catch {
-    /* */
+    /* never throw Unexpected end of JSON input to client */
   }
   return {};
 }
+
+const BUILD_ID =
+  (process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || "dev").slice(
+    0,
+    8
+  );
 
 function serveStatic(urlPath: string, res: http.ServerResponse) {
   let rel = urlPath === "/" ? "/index.html" : urlPath;
@@ -732,6 +751,8 @@ async function handleRequest(
           ok: true,
           brand: config.brand,
           dataDir: dataDir(),
+          build: BUILD_ID,
+          x402: isX402SdkConfigured(),
           auth: "portal_only",
           entry: "OKX.AI Agent → Agentic Wallet 登录 → 付费/dev 开通 → 用户点击 /p/{slug}",
           user: session
@@ -1491,6 +1512,248 @@ app.post("/api/access/dev-unlock", async (req, res) => {
   }
 });
 
+/**
+ * 关键 API 用 Express 原生路由（req.body 已由 express.json 填好）。
+ * 避免落入 handleRequest 时 body 流已被消费。
+ */
+function expressSession(req: express.Request) {
+  return getSession(parseAuthToken(req));
+}
+
+async function expressAuthed(
+  req: express.Request,
+  res: express.Response,
+  needEntitled: boolean,
+  fn: (ctx: {
+    session: NonNullable<ReturnType<typeof getSession>>;
+    body: Record<string, unknown>;
+  }) => Promise<void>
+): Promise<void> {
+  try {
+    ensureDataDirs();
+    const session = expressSession(req);
+    if (!session) {
+      res.status(401).json({
+        error: "请通过 OKX.AI Agent 获取专属链接并自行打开（/p/slug）",
+      });
+      return;
+    }
+    if (needEntitled && !isEntitled(session.address)) {
+      res.status(402).json({
+        error: "payment_required",
+        message: "请先在 OKX.AI 购买职块，由 Agent 返回专属链接后打开",
+      });
+      return;
+    }
+    const body =
+      req.body && typeof req.body === "object" && !Array.isArray(req.body)
+        ? (req.body as Record<string, unknown>)
+        : {};
+    await withUserContext(session.userId, async () => {
+      await fn({ session, body });
+    });
+  } catch (e) {
+    console.error("[express api]", e);
+    res.status(500).json({ error: (e as Error).message });
+  }
+}
+
+app.post("/api/profile", (req, res) => {
+  void expressAuthed(req, res, true, async ({ session, body }) => {
+    const { profile, warnings } = saveProfileFromInput(
+      (body.profile as object) || body
+    );
+    const auto = body.auto_search !== false;
+    const pathLang =
+      body.lang === "en" || body.lang === "zh" ? String(body.lang) : "zh";
+    res.status(200).json({
+      ok: true,
+      profile,
+      warnings,
+      auto_search: auto,
+      message: auto
+        ? "目前已经开始自动搜索，请耐心等待报告结果"
+        : "画像已保存",
+      build: BUILD_ID,
+    });
+    if (auto) {
+      const uid = session.userId;
+      if (!runningPipelines.has(uid)) {
+        runningPipelines.add(uid);
+        setImmediate(() => {
+          dataContext
+            .run({ userDataDir: userDataDir(uid) }, () =>
+              runAutoPipeline({
+                limitPerSource: 20,
+                lang: pathLang as PathLang,
+              })
+            )
+            .catch((e) => console.error("[auto pipeline]", e))
+            .finally(() => runningPipelines.delete(uid));
+        });
+      }
+    }
+  });
+});
+
+app.post("/api/pipeline/run", (req, res) => {
+  void expressAuthed(req, res, true, async ({ session, body }) => {
+    const uid = session.userId;
+    if (runningPipelines.has(uid)) {
+      res.status(200).json({
+        ok: true,
+        running: true,
+        message: "目前已经开始自动搜索，请耐心等待报告结果",
+        status: readPipelineStatus(),
+        build: BUILD_ID,
+      });
+      return;
+    }
+    const pathLang =
+      body.lang === "en" || body.lang === "zh" ? String(body.lang) : "zh";
+    runningPipelines.add(uid);
+    try {
+      const result = await runAutoPipeline({
+        limitPerSource: 20,
+        lang: pathLang as PathLang,
+      });
+      res.status(200).json({
+        ok: true,
+        ...result,
+        path: result.path,
+        text: formatShortlist(result.shortlist),
+        build: BUILD_ID,
+      });
+    } finally {
+      runningPipelines.delete(uid);
+    }
+  });
+});
+
+app.post("/api/week-plan/task", (req, res) => {
+  void expressAuthed(req, res, true, async ({ body }) => {
+    const taskId = String(
+      body.task_id || body.taskId || body.id || ""
+    ).trim();
+    if (!taskId) {
+      res.status(400).json({
+        error: "需要 task_id",
+        message: "需要 task_id",
+        received_keys: Object.keys(body),
+        received_body: body,
+        build: BUILD_ID,
+      });
+      return;
+    }
+    const plan = toggleWeekTask(
+      taskId,
+      typeof body.done === "boolean" ? body.done : undefined
+    );
+    if (!plan) {
+      res.status(404).json({ error: "任务不存在，请先生成 Plan" });
+      return;
+    }
+    res.status(200).json({
+      ok: true,
+      plan,
+      progress: weekPlanProgress(plan),
+      build: BUILD_ID,
+    });
+  });
+});
+
+app.post("/api/applications", (req, res) => {
+  void expressAuthed(req, res, true, async ({ body }) => {
+    const r = addFromShortlistPayload(
+      body as Parameters<typeof addFromShortlistPayload>[0]
+    );
+    if ("error" in r) {
+      res.status(400).json({
+        error: r.error,
+        message: r.error,
+        received_keys: Object.keys(body),
+        received_body: body,
+        build: BUILD_ID,
+      });
+      return;
+    }
+    res.status(200).json({
+      ok: true,
+      created: r.created,
+      application: enrichApp(r.app),
+      message: r.created ? "已加入申请追踪" : "已在追踪列表中",
+      build: BUILD_ID,
+    });
+  });
+});
+
+app.post("/api/battle-pack", (req, res) => {
+  void expressAuthed(req, res, true, async ({ body }) => {
+    const profile = getProfile();
+    if (!profile) {
+      res.status(400).json({
+        error: "setup_required",
+        message: "请先完成 Setup（设置页）再生成作战包",
+        build: BUILD_ID,
+      });
+      return;
+    }
+    const jobs = loadJobs();
+    const sl = loadShortlist();
+    const nested =
+      body.job && typeof body.job === "object"
+        ? (body.job as Record<string, unknown>)
+        : null;
+    const wantId = String(body.job_id || nested?.id || "").trim();
+    let job =
+      (wantId && jobs.find((j) => j.id === wantId)) ||
+      (wantId && sl.find((j) => j.id === wantId)) ||
+      null;
+    const snapTitle = String(nested?.title || body.title || "").trim();
+    const snapCompany = String(nested?.company || body.company || "").trim();
+    if (!job && (wantId || snapTitle || snapCompany)) {
+      const srcRaw = String(nested?.source || body.source || "other");
+      const srcOk = [
+        "web3.career",
+        "dejob.ai",
+        "telegram",
+        "paste",
+        "x",
+        "other",
+      ] as const;
+      job = {
+        id: wantId || `snap_${snapCompany}|${snapTitle}`.slice(0, 80),
+        title: snapTitle || "Role",
+        company: snapCompany || "Company",
+        source_url: String(nested?.source_url || body.source_url || ""),
+        source: (srcOk as readonly string[]).includes(srcRaw)
+          ? (srcRaw as (typeof srcOk)[number])
+          : "other",
+        role_family: nested?.role_family as string | undefined,
+        remote_type: nested?.remote_type as string | undefined,
+        match: nested?.match as import("./types.js").Job["match"],
+        scraped_at: new Date().toISOString(),
+      } as import("./types.js").Job;
+    }
+    if (!job) {
+      res.status(404).json({
+        error: "job_not_found",
+        message: "找不到岗位，请刷新计划页后重试",
+        received_keys: Object.keys(body),
+        received_body: body,
+        build: BUILD_ID,
+      });
+      return;
+    }
+    const pack = buildBattlePack(
+      normalizeProfile(profile),
+      job,
+      body.lang === "en" ? "en" : "zh"
+    );
+    res.status(200).json({ ok: true, pack, build: BUILD_ID });
+  });
+});
+
 // 其余 API / 静态资源
 app.use((req, res) => {
   void handleRequest(req, res);
@@ -1502,5 +1765,6 @@ app.listen(PORT, HOST, () => {
   console.log(`  UI   →  http://${HOST}:${PORT}`);
   console.log(`  data →  ${dataDir()}`);
   console.log(`  public → ${publicBaseUrl()}`);
+  console.log(`  build → ${BUILD_ID}`);
   console.log("");
 });
