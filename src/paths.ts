@@ -55,6 +55,8 @@ export const files = {
   tgInbox: () => path.join(dataDir(), "jobs", "tg-inbox.jsonl"),
   pipelineStatus: () => path.join(dataDir(), "pipeline-status.json"),
   careerPath: () => path.join(dataDir(), "career-path.json"),
+  weekPlan: () => path.join(dataDir(), "week-plan.json"),
+  outreach: () => path.join(dataDir(), "outreach.json"),
   usersIndex: () => path.join(baseDataDir(), "accounts", "index.json"),
   sessions: () => path.join(baseDataDir(), "sessions", "sessions.json"),
 };

@@ -79,3 +79,16 @@ BASE = {{JOB_BLOCK_PUBLIC_URL}}
 | 用户点链接 | `GET /p/{slug}` | 默登，Setup 可见预填 |
 
 生产支付见 [Seller SDK](https://web3.okx.com/zh-hans/onchainos/dev-docs/payments/service-seller-sdk)。
+
+---
+
+## 开通之后 · 陪跑
+
+用户完成专属页 Setup 并生成 Plan 后，切换到 **陪跑 Prompt**（周任务、催办、复盘）：
+
+→ 见 [COMPANION-PROMPT.md](./COMPANION-PROMPT.md)
+
+| 时机 | API | 作用 |
+|------|-----|------|
+| 陪跑读状态 | `GET /api/agent/progress?address=` | 本周任务进度、逾期申请、未完成任务（需已开通） |
+| 网页 | Plan「本周任务」+ 导航「申请」 | 勾选任务、追踪状态与跟进日 |

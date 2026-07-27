@@ -108,19 +108,20 @@ function syncTrackerCsv(): void {
   const jobs = loadJobs();
   const jobMap = new Map(jobs.map((j) => [j.id, j]));
   const header =
-    "id,job_id,company,title,status,score,updated_at,source_url,outcome\n";
+    "id,job_id,company,title,status,score,updated_at,source_url,outcome,next_follow_up_at\n";
   const rows = apps.map((a) => {
     const j = jobMap.get(a.job_id);
     const cells = [
       a.id,
       a.job_id,
-      csv(j?.company || ""),
-      csv(j?.title || ""),
+      csv(a.company || j?.company || ""),
+      csv(a.title || j?.title || ""),
       a.status,
-      j?.match?.score?.toString() || "",
+      (a.score ?? j?.match?.score)?.toString() || "",
       a.updated_at,
-      csv(j?.source_url || ""),
+      csv(a.source_url || j?.source_url || ""),
       csv(a.outcome || ""),
+      csv(a.next_follow_up_at || ""),
     ];
     return cells.join(",");
   });

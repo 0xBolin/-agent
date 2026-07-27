@@ -322,10 +322,25 @@ export function buildX402Challenge(resource: string): {
   body: Record<string, unknown>;
 } {
   const payTo =
+    process.env.PAY_TO_ADDRESS ||
     process.env.JOB_BLOCK_PAY_TO ||
     "0x0000000000000000000000000000000000000000";
-  const price = process.env.JOB_BLOCK_PRICE_USDC || "5";
+  const price =
+    process.env.JOB_BLOCK_PRICE_USD ||
+    process.env.JOB_BLOCK_PRICE_USDC ||
+    "19.99";
   const network = process.env.JOB_BLOCK_NETWORK || "eip155:196";
+  // X Layer USDT（与上架服务 fee token 对齐）
+  const asset =
+    process.env.JOB_BLOCK_USDC_ADDRESS ||
+    "0x779ded0c9e1022225f8e0630b35a9b54be713736";
+  const publicRes =
+    process.env.JOB_BLOCK_PUBLIC_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    resource;
+  const resourceUrl = publicRes.includes("/api/access/unlock")
+    ? publicRes.replace(/\/$/, "")
+    : `${publicRes.replace(/\/$/, "")}/api/access/unlock`;
   const challenge = {
     x402Version: 2,
     accepts: [
@@ -333,14 +348,12 @@ export function buildX402Challenge(resource: string): {
         scheme: "exact",
         network,
         maxAmountRequired: String(Math.floor(Number(price) * 1e6)),
-        resource,
+        resource: resourceUrl,
         description: "职块 Job Block · OKX.AI 专属求职 Agent",
         mimeType: "application/json",
         payTo,
         maxTimeoutSeconds: 600,
-        asset:
-          process.env.JOB_BLOCK_USDC_ADDRESS ||
-          "0x0000000000000000000000000000000000000000",
+        asset,
         extra: {
           name: "职块 Job Block",
           product: "job-block-access",

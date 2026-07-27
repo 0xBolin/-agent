@@ -20,6 +20,7 @@ export type SeniorityLevel =
 export type AlertFrequency = "daily" | "weekly" | "high_only" | "off";
 
 export type ApplicationStatus =
+  | "interested"
   | "new"
   | "ranked"
   | "evaluating"
@@ -101,12 +102,41 @@ export interface Profile {
   /** ⑬ 线下 networking 城市（可与求职城市不同） */
   event_cities: string[];
 
+  /** Phase 2：社交账号（X / LinkedIn / GitHub） */
+  social?: {
+    x?: string;
+    linkedin?: string;
+    github?: string;
+  };
+
+  /** Phase 2：Proof 资产（可展示证据，3–5 条） */
+  proof_items?: string[];
+
   /** 角色扩展自由字段 */
   role_extensions: Record<string, string | string[] | number | boolean>;
   writing_style?: string;
   updated_at: string;
   /** setup 完成标记 */
   setup_completed?: boolean;
+}
+
+/** Phase 2：触达状态 */
+export type OutreachStatus = "todo" | "messaged" | "replied" | "referred";
+
+export interface OutreachContact {
+  id: string;
+  company: string;
+  who: string;
+  job_title?: string;
+  status: OutreachStatus;
+  next_follow_up_at?: string;
+  linkedin_url?: string;
+  x_url?: string;
+  dm_draft?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+  timeline?: { at: string; status: OutreachStatus; note?: string }[];
 }
 
 export interface Job {
@@ -151,6 +181,45 @@ export interface Application {
   materials_paths: string[];
   outcome?: string;
   outcome_notes?: string;
+  /** 下次跟进日 ISO date 或 datetime */
+  next_follow_up_at?: string;
+  /** 岗位快照（短名单加入时写入，避免依赖 jobs 库） */
+  company?: string;
+  title?: string;
+  source_url?: string;
+  score?: number;
+  source?: string;
+  notes?: string;
+}
+
+/** 本周任务 */
+export type WeekTaskType =
+  | "apply"
+  | "outreach"
+  | "event"
+  | "improve"
+  | "followup"
+  | "contribute";
+
+export interface WeekTask {
+  id: string;
+  type: WeekTaskType;
+  title: string;
+  detail?: string;
+  /** 关联 job / application / event / improve 索引 */
+  ref_id?: string;
+  done: boolean;
+  done_at?: string;
+  order: number;
+}
+
+export interface WeekPlan {
+  week_id: string;
+  /** 周一 00:00 所在周的标识 YYYY-MM-DD（周一） */
+  week_start: string;
+  generated_at: string;
+  tasks: WeekTask[];
+  note?: string;
 }
 
 export interface EventItem {

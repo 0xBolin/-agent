@@ -7,6 +7,7 @@ import type {
   SeniorityLevel,
 } from "../types.js";
 import { saveProfile, loadProfile } from "../store/fs-store.js";
+import { normalizeSocialInput } from "./proof.js";
 import { files, ensureDataDirs } from "../paths.js";
 import { hasLlm } from "../config.js";
 import { chatJson } from "../llm/client.js";
@@ -94,6 +95,12 @@ export function normalizeProfile(raw: Partial<Profile> | null | undefined): Prof
       token_only_ok: raw.comp_pref?.token_only_ok ?? false,
       equity_ok: raw.comp_pref?.equity_ok ?? true,
     },
+    social: {
+      x: String(raw.social?.x || "").trim() || undefined,
+      linkedin: String(raw.social?.linkedin || "").trim() || undefined,
+      github: String(raw.social?.github || "").trim() || undefined,
+    },
+    proof_items: arr(raw.proof_items).slice(0, 8),
     role_extensions: raw.role_extensions || {},
     primary_role: (raw.primary_role as RoleFamily) || d.primary_role,
     experience_years: Number(raw.experience_years || 0),
@@ -149,6 +156,8 @@ export function defaultProfile(): Profile {
     discrete_mode: false,
     alert_frequency: "weekly",
     event_cities: [],
+    social: {},
+    proof_items: [],
     role_extensions: {},
     updated_at: new Date().toISOString(),
     setup_completed: false,
@@ -179,15 +188,38 @@ export function saveProfileFromInput(input: Partial<Profile>): {
   profile: Profile;
   warnings: string[];
 } {
-  const profile = normalizeProfile({
-    ...loadProfile(),
+  const prev = loadProfile();
+  // 深度合并 location / comp / role_extensions，避免预填时整段被冲掉
+  const merged: Partial<Profile> = {
+    ...prev,
     ...input,
+    location_pref: {
+      ...(prev?.location_pref || defaultProfile().location_pref),
+      ...(input.location_pref || {}),
+    },
+    comp_pref: {
+      ...(prev?.comp_pref || defaultProfile().comp_pref),
+      ...(input.comp_pref || {}),
+    },
+    role_extensions: {
+      ...(prev?.role_extensions || {}),
+      ...(input.role_extensions || {}),
+    },
+    social: normalizeSocialInput({
+      ...(prev?.social || {}),
+      ...(input.social || {}),
+    }),
+    proof_items:
+      input.proof_items !== undefined
+        ? input.proof_items
+        : prev?.proof_items,
     updated_at: new Date().toISOString(),
     setup_completed:
       input.setup_completed === false
         ? false
         : input.setup_completed ?? true,
-  });
+  };
+  const profile = normalizeProfile(merged);
   // 从简历粗抽 summary
   if (!profile.summary && profile.resume_text) {
     profile.summary = profile.resume_text.replace(/\s+/g, " ").slice(0, 280);

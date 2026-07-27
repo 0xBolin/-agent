@@ -13,35 +13,39 @@
   <div class="noise"></div>
 
   <div id="authGate" class="auth-gate">
+    <div class="lang-switch auth-lang" id="langSwitchAuth" role="group" aria-label="Language">
+      <button type="button" class="lang-btn on" data-lang="zh">中文</button>
+      <button type="button" class="lang-btn" data-lang="en">EN</button>
+    </div>
     <div class="auth-card">
       <div class="auth-brand">
         <span class="brand-mark">◼</span>
         <div>
           <div class="brand-name">职块 <span class="muted">Job Block</span></div>
-          <div class="brand-sub">OKX.AI · 专属链接默登</div>
+          <div class="brand-sub" data-i18n="brand_sub_auth">OKX.AI · 专属链接登录</div>
         </div>
       </div>
-      <h1 class="auth-title">请使用专属链接进入</h1>
-      <p class="auth-lede">本页不提供注册或网页钱包登录。请在自己的 Agent 中完成 Agentic Wallet 登录与购买，再点击 Agent 给你的链接。</p>
+      <h1 class="auth-title" data-i18n="auth_title">请使用专属链接进入</h1>
+      <p class="auth-lede" data-i18n="auth_lede">本页不提供注册或网页钱包登录。请在自己的 Agent 中完成 Agentic Wallet 登录与购买，再点击 Agent 给你的链接。</p>
 
       <div class="auth-steps">
-        <div class="auth-step"><span>1</span> 在 OKX.AI 复制职块 Prompt，在自己的 Agent 打开</div>
-        <div class="auth-step"><span>2</span> Agent 引导 Agentic Wallet 登录（只返回登录链接，你自行点击）</div>
-        <div class="auth-step"><span>3</span> 先付费（或 dev 开通）→ 生成 <code>/p/…</code></div>
-        <div class="auth-step"><span>4</span> 你自行点击专属链接 → 默认登录进入</div>
+        <div class="auth-step"><span>1</span> <span data-i18n="auth_step_1">在 OKX.AI 复制职块提示词，在自己的 Agent 中打开</span></div>
+        <div class="auth-step"><span>2</span> <span data-i18n="auth_step_2">Agent 引导 Agentic Wallet 登录（只返回登录链接，请自行点击）</span></div>
+        <div class="auth-step"><span>3</span> <span data-i18n="auth_step_3">先付费（或开发开通）→ 生成专属链接 /p/…</span></div>
+        <div class="auth-step"><span>4</span> <span data-i18n="auth_step_4">自行点击专属链接 → 默认登录进入</span></div>
       </div>
 
       <div id="devBox" class="dev-box" hidden>
-        <p class="dev-title">开发者：模拟开通（仅返回链接，不代登）</p>
-        <button type="button" class="btn ghost auth-submit" id="btnDevUnlock">生成测试专属链接</button>
+        <p class="dev-title" data-i18n="auth_dev_title">开发者：模拟开通（仅返回链接，不代登）</p>
+        <button type="button" class="btn ghost auth-submit" id="btnDevUnlock" data-i18n="auth_dev_btn">生成测试专属链接</button>
         <div id="devLinkWrap" class="dev-link-wrap" hidden>
           <code id="devLink"></code>
-          <button type="button" class="btn primary sm" id="btnCopyLink">复制链接</button>
+          <button type="button" class="btn primary sm" id="btnCopyLink" data-i18n="auth_copy">复制链接</button>
         </div>
       </div>
 
       <p class="auth-error" id="authError" hidden></p>
-      <p class="auth-note" id="authNote">用户 Prompt 见仓库 docs/USER-PROMPT.md</p>
+      <p class="auth-note" id="authNote" data-i18n="auth_note">用户提示词见仓库 docs/USER-PROMPT.md</p>
     </div>
   </div>
 
@@ -51,27 +55,32 @@
         <span class="brand-mark">◼</span>
         <div>
           <div class="brand-name">职块 <span class="muted">Job Block</span></div>
-          <div class="brand-sub">Web3 Career Agent</div>
+          <div class="brand-sub" data-i18n="brand_sub">Web3 求职 Agent</div>
         </div>
       </div>
       <nav class="nav">
-        <button class="nav-btn active" data-view="setup">Setup</button>
-        <button class="nav-btn" data-view="report">路径</button>
-        <button class="nav-btn" data-view="events">Events</button>
-        <button class="nav-btn" data-view="profile">Profile</button>
+        <button class="nav-btn active" data-view="setup" data-i18n="nav_setup">设置</button>
+        <button class="nav-btn" data-view="report" data-i18n="nav_plan">计划</button>
+        <button class="nav-btn" data-view="tracker" data-i18n="nav_tracker">申请</button>
+        <button class="nav-btn" data-view="events" data-i18n="nav_events">活动</button>
+        <button class="nav-btn" data-view="profile" data-i18n="nav_profile">画像</button>
       </nav>
       <div class="top-right">
         <span class="top-meta" id="topMeta">—</span>
+        <div class="lang-switch" id="langSwitch" role="group" aria-label="Language">
+          <button type="button" class="lang-btn on" data-lang="zh">中文</button>
+          <button type="button" class="lang-btn" data-lang="en">EN</button>
+        </div>
         <span class="user-pill" id="userPill"></span>
-        <button type="button" class="btn ghost sm" id="btnLogout">退出</button>
+        <button type="button" class="btn ghost sm" id="btnLogout" data-i18n="btn_logout">退出</button>
       </div>
     </header>
 
     <!-- SETUP -->
     <main id="view-setup" class="view">
       <section class="hero compact">
-        <p class="eyebrow">JOB BLOCK</p>
-        <h1>每一份值得的机会，<br /><span class="grad">都是一块职块。</span></h1>
+        <p class="eyebrow" data-i18n="hero_eyebrow_setup">职块</p>
+        <h1 data-i18n-html="hero_title">每一份值得的机会，<br /><span class="grad">都是一块职块。</span></h1>
       </section>
 
       <div class="wizard-shell">
@@ -84,96 +93,112 @@
               <p class="step-desc" id="stepDesc"></p>
             </div>
             <div class="panel-actions">
-              <button type="button" class="btn ghost" id="btnExample">示例</button>
-              <button type="button" class="btn ghost" id="btnLoad">读取</button>
+              <button type="button" class="btn ghost" id="btnExample" data-i18n="btn_example">示例</button>
+              <button type="button" class="btn ghost" id="btnLoad" data-i18n="btn_load">读取</button>
             </div>
           </div>
 
           <form id="setupForm" class="form" autocomplete="off">
             <div class="step-pane active" data-step="0">
-              <label class="field"><span>称呼</span><input name="display_name" placeholder="名字 / 花名" /></label>
-              <label class="field"><span>目标岗位 Title</span>
+              <label class="field"><span data-i18n="f_name">称呼</span><input name="display_name" data-i18n-placeholder="ph_name" placeholder="名字 / 花名" /></label>
+              <label class="field"><span data-i18n="f_titles">目标岗位 Title</span>
                 <textarea name="target_titles" rows="3" placeholder="Business Development Manager, Growth Lead"></textarea>
               </label>
-              <div class="field"><span>主角色线</span><div class="chips" id="primaryRole"></div></div>
-              <div class="field"><span>次角色</span><div class="chips" id="secondaryRoles"></div></div>
+              <div class="field"><span data-i18n="f_primary_role">主角色线</span><div class="chips" id="primaryRole"></div></div>
+              <div class="field"><span data-i18n="f_secondary_role">次角色</span><div class="chips" id="secondaryRoles"></div></div>
             </div>
             <div class="step-pane" data-step="1">
-              <p class="hint hint-below resume-agent-hint">
-                简历由你的 Agent 在开通专属链接前解析并预填。此处仅供确认与微调，网页不再上传 PDF。
+              <p class="hint hint-below resume-agent-hint" data-i18n="resume_hint">
+                简历由你的 Agent 在开通专属链接前解析并预填。此处展示结构化摘要，可确认与微调。
               </p>
-              <label class="field"><span>简历文本</span>
-                <textarea name="resume_text" rows="8" class="mono" placeholder="由 Agent 预填；可在此微调"></textarea>
-              </label>
-              <label class="field"><span>简介</span><input name="summary" placeholder="由 Agent 预填" /></label>
-              <label class="field"><span>技能</span><input name="skills" placeholder="由 Agent 预填" /></label>
-              <label class="field"><span>岗位关键词</span><input name="keywords" placeholder="由 Agent 预填" /></label>
+              <div id="resumeStructured" class="resume-structured">
+                <div class="resume-empty muted" data-i18n="resume_empty">尚未解析到简历摘要。请通过 Agent 提交 PDF 后再打开专属链接。</div>
+              </div>
+              <label class="field"><span data-i18n="f_summary">简介</span><input name="summary" data-i18n-placeholder="ph_prefill" placeholder="由 Agent 预填" /></label>
+              <label class="field"><span data-i18n="f_skills">技能</span><input name="skills" data-i18n-placeholder="ph_prefill" placeholder="由 Agent 预填" /></label>
+              <label class="field"><span data-i18n="f_keywords">岗位关键词</span><input name="keywords" data-i18n-placeholder="ph_prefill" placeholder="由 Agent 预填" /></label>
+              <!-- 原文保留匹配用，默认折叠 -->
+              <details class="resume-raw-details">
+                <summary data-i18n="resume_raw_toggle">完整简历原文（匹配用，可微调）</summary>
+                <label class="field"><span data-i18n="f_resume_raw">简历原文</span>
+                  <textarea name="resume_text" rows="6" class="mono" data-i18n-placeholder="ph_resume_raw" placeholder="由 Agent 预填"></textarea>
+                </label>
+              </details>
             </div>
             <div class="step-pane" data-step="2">
-              <label class="field"><span>求职城市</span><input name="cities" placeholder="Singapore, Hong Kong" /></label>
-              <div class="field"><span>工作方式</span>
+              <label class="field"><span data-i18n="f_cities">求职城市</span><input name="cities" placeholder="Singapore, Hong Kong" /></label>
+              <div class="field"><span data-i18n="f_work_mode">工作方式</span>
                 <div class="toggles">
-                  <label class="toggle"><input type="checkbox" name="remote_ok" checked /> Remote</label>
-                  <label class="toggle"><input type="checkbox" name="hybrid_ok" checked /> Hybrid</label>
-                  <label class="toggle"><input type="checkbox" name="onsite_ok" /> Onsite</label>
+                  <label class="toggle"><input type="checkbox" name="remote_ok" checked /> <span data-i18n="f_remote">远程</span></label>
+                  <label class="toggle"><input type="checkbox" name="hybrid_ok" checked /> <span data-i18n="f_hybrid">混合</span></label>
+                  <label class="toggle"><input type="checkbox" name="onsite_ok" /> <span data-i18n="f_onsite">现场</span></label>
                 </div>
               </div>
             </div>
             <div class="step-pane" data-step="3">
-              <div class="field"><span>赛道</span><div class="chips" id="sectorsWhite"></div></div>
-              <label class="field"><span>追加赛道</span><input name="sectors_white_extra" /></label>
-              <label class="field"><span>黑名单</span><input name="sectors_blacklist" placeholder="gambling" /></label>
+              <div class="field"><span data-i18n="f_sectors">赛道</span><div class="chips" id="sectorsWhite"></div></div>
+              <label class="field"><span data-i18n="f_sectors_extra">追加赛道</span><input name="sectors_white_extra" /></label>
+              <label class="field"><span data-i18n="f_blacklist">黑名单</span><input name="sectors_blacklist" placeholder="gambling" /></label>
             </div>
             <div class="step-pane" data-step="4">
               <div class="grid-2">
-                <label class="field"><span>最低月薪</span><input name="min_base_fiat" type="number" placeholder="4000" /></label>
-                <label class="field"><span>币种</span><input name="currency" value="USD" /></label>
+                <label class="field"><span data-i18n="f_min_salary">最低月薪</span><input name="min_base_fiat" type="number" placeholder="4000" /></label>
+                <label class="field"><span data-i18n="f_currency">币种</span><input name="currency" value="USD" /></label>
               </div>
-              <div class="field"><span>补偿</span>
+              <div class="field"><span data-i18n="f_comp">薪资构成</span>
                 <div class="toggles">
-                  <label class="toggle"><input type="checkbox" name="token_ok" checked /> Token</label>
-                  <label class="toggle"><input type="checkbox" name="token_only_ok" /> 纯 Token</label>
-                  <label class="toggle"><input type="checkbox" name="equity_ok" checked /> Equity</label>
+                  <label class="toggle"><input type="checkbox" name="token_ok" checked /> <span data-i18n="f_token">代币</span></label>
+                  <label class="toggle"><input type="checkbox" name="token_only_ok" /> <span data-i18n="f_token_only">纯代币</span></label>
+                  <label class="toggle"><input type="checkbox" name="equity_ok" checked /> <span data-i18n="f_equity">股权</span></label>
                 </div>
               </div>
             </div>
             <div class="step-pane" data-step="5">
-              <label class="field"><span>绝对不要</span>
+              <label class="field"><span data-i18n="f_dealbreakers">绝对不要</span>
                 <textarea name="deal_breakers" rows="3" placeholder="token only, pay to apply"></textarea>
               </label>
             </div>
             <div class="step-pane" data-step="6">
-              <label class="field"><span>语言</span><input name="languages" placeholder="中文, English" /></label>
+              <label class="field"><span data-i18n="f_languages">语言</span><input name="languages" placeholder="中文, English" /></label>
               <div class="grid-2">
-                <label class="field"><span>年限</span><input name="experience_years" type="number" min="0" max="40" /></label>
-                <div class="field"><span>级别</span><div class="chips" id="levelChips"></div></div>
+                <label class="field"><span data-i18n="f_years">年限</span><input name="experience_years" type="number" min="0" max="40" /></label>
+                <div class="field"><span data-i18n="f_level">级别</span><div class="chips" id="levelChips"></div></div>
               </div>
             </div>
             <div class="step-pane" data-step="7">
-              <label class="field"><span>亮点（每行一条）</span>
+              <label class="field"><span data-i18n="f_highlights">亮点（每行一条）</span>
                 <textarea name="highlights" rows="5"></textarea>
               </label>
+              <label class="field"><span data-i18n="f_proof">Proof 证明（每行一条，3–5 条）</span>
+                <textarea name="proof_items" rows="4" data-i18n-placeholder="ph_proof" placeholder="可量化成果 / 可点击证据"></textarea>
+              </label>
+              <div class="field"><span data-i18n="f_social">社交账号</span>
+                <div class="grid-2" style="margin-top:8px">
+                  <label class="field"><span>X</span><input name="social_x" placeholder="https://x.com/you 或 @handle" /></label>
+                  <label class="field"><span>LinkedIn</span><input name="social_linkedin" placeholder="linkedin.com/in/you" /></label>
+                </div>
+                <label class="field"><span>GitHub</span><input name="social_github" placeholder="github.com/you" /></label>
+              </div>
             </div>
             <div class="step-pane" data-step="8">
-              <div class="field"><span>公司类型</span><div class="chips" id="companyTypes"></div></div>
+              <div class="field"><span data-i18n="f_company_types">公司类型</span><div class="chips" id="companyTypes"></div></div>
             </div>
             <div class="step-pane" data-step="9">
-              <label class="field"><span>时区</span><select name="timezone" id="timezoneSelect"></select></label>
-              <div class="field"><span>保密观望</span>
+              <label class="field"><span data-i18n="f_timezone">时区</span><select name="timezone" id="timezoneSelect"></select></label>
+              <div class="field"><span data-i18n="f_discrete">保密观望</span>
                 <div class="toggles">
-                  <label class="toggle"><input type="checkbox" name="discrete_mode" /> 开启</label>
+                  <label class="toggle"><input type="checkbox" name="discrete_mode" /> <span data-i18n="f_enable">开启</span></label>
                 </div>
               </div>
-              <div class="field"><span>提醒频率</span><div class="chips" id="alertFreq"></div></div>
+              <div class="field"><span data-i18n="f_alert">提醒频率</span><div class="chips" id="alertFreq"></div></div>
             </div>
-            <!-- STEP 11 亮点：活动城市 → 自动联动路径/Events -->
             <div class="step-pane" data-step="10">
               <div class="feature-callout">
-                <div class="feature-badge">亮点 · STEP 11</div>
-                <h3>活动城市</h3>
-                <p>填你能出现的城市。职块会<strong>自动</strong>从 Luma 匹配适合你的线下活动，并写进求职路径——不用你自己搜。</p>
+                <div class="feature-badge" data-i18n="event_badge">亮点 · STEP 11</div>
+                <h3 data-i18n="event_title">活动城市</h3>
+                <p data-i18n-html="event_desc">填你能出现的城市。职块会<strong>自动</strong>从 Luma 匹配适合你的线下活动，并写进求职路径——不用你自己搜。</p>
               </div>
-              <label class="field"><span>你能到场的城市</span>
+              <label class="field"><span data-i18n="f_event_cities">你能到场的城市</span>
                 <input name="event_cities" placeholder="Singapore, Hong Kong, Dubai" />
               </label>
               <div class="review-box" id="reviewBox"></div>
@@ -181,11 +206,11 @@
           </form>
 
           <div class="panel-foot">
-            <button type="button" class="btn ghost" id="btnPrev" disabled>上一步</button>
+            <button type="button" class="btn ghost" id="btnPrev" disabled data-i18n="btn_prev">上一步</button>
             <div class="foot-right">
               <span class="progress-text" id="progressText">1 / 11</span>
-              <button type="button" class="btn primary" id="btnNext">下一步</button>
-              <button type="button" class="btn primary hidden" id="btnSave">生成求职路径</button>
+              <button type="button" class="btn primary" id="btnNext" data-i18n="btn_next">下一步</button>
+              <button type="button" class="btn primary hidden" id="btnSave" data-i18n="btn_save">生成求职路径</button>
             </div>
           </div>
           <div class="toast" id="toast" hidden></div>
@@ -196,7 +221,7 @@
     <!-- PATH REPORT -->
     <main id="view-report" class="view hidden">
       <section class="hero compact">
-        <p class="eyebrow">CAREER PATH</p>
+        <p class="eyebrow" data-i18n="hero_eyebrow_plan">求职路径</p>
         <h1 id="pathHeadline">完整求职路径</h1>
         <p class="lede" id="pathSummary">线上岗位 · 线下活动 · 该联系的人 · 该补的能力——自动拼成一条可执行路径。</p>
       </section>
@@ -204,16 +229,27 @@
       <div class="pipeline-banner" id="pipelineBanner">
         <div class="pipeline-spinner" id="pipelineSpinner"></div>
         <div>
-          <div class="pipeline-title" id="pipelineTitle">等待</div>
-          <div class="pipeline-msg" id="pipelineMsg">完成 Setup 后自动生成</div>
+          <div class="pipeline-title" id="pipelineTitle" data-i18n="path_waiting">等待中</div>
+          <div class="pipeline-msg" id="pipelineMsg" data-i18n="path_idle_msg">完成设置后自动生成</div>
         </div>
         <div class="pipeline-pct" id="pipelinePct">0%</div>
       </div>
       <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
 
       <div class="action-row">
-        <button class="btn ghost" id="btnRerun">重新生成</button>
+        <button class="btn ghost" id="btnRerun" data-i18n="btn_rerun">重新生成</button>
+        <button class="btn ghost" id="btnRebuildWeek" data-i18n="btn_rebuild_week">刷新本周任务</button>
       </div>
+
+      <!-- Phase 1：本周任务 -->
+      <section class="path-section" id="weekPlanSection">
+        <div class="section-head-row">
+          <h2 class="section-title" data-i18n="sec_week">本周任务</h2>
+          <span class="week-progress" id="weekProgressLabel">0 / 0</span>
+        </div>
+        <div class="progress-bar week-bar"><div class="progress-fill" id="weekProgressFill"></div></div>
+        <div id="weekTasks" class="week-tasks"></div>
+      </section>
 
       <!-- 路径步骤 -->
       <section class="path-section">
@@ -228,7 +264,7 @@
 
       <section class="path-section">
         <h2 class="section-title">建议提升</h2>
-        <div id="pathImprove" class="chip-list"></div>
+        <div id="pathImprove" class="improve-list"></div>
       </section>
 
       <section class="path-section">
@@ -245,14 +281,53 @@
         <h2 class="section-title">投递入口</h2>
         <div id="pathApply" class="card-list"></div>
       </section>
+
+      <!-- Phase 2：作战包弹层 -->
+      <div id="battlePackModal" class="bp-modal hidden" hidden>
+        <div class="bp-backdrop" id="bpBackdrop"></div>
+        <div class="bp-sheet">
+          <div class="bp-head">
+            <h3 id="bpTitle">作战包</h3>
+            <button type="button" class="btn ghost sm" id="bpClose">×</button>
+          </div>
+          <div id="bpBody" class="bp-body"></div>
+        </div>
+      </div>
+    </main>
+
+    <!-- TRACKER：申请追踪 + 触达 -->
+    <main id="view-tracker" class="view hidden">
+      <section class="hero compact">
+        <p class="eyebrow" data-i18n="hero_eyebrow_tracker">申请流水线</p>
+        <h1 data-i18n="tracker_title">申请追踪</h1>
+        <p class="lede" data-i18n="tracker_lede">记录已投与跟进日，逾期会标红。可从计划页优先投递一键加入。</p>
+      </section>
+      <div class="tracker-tabs">
+        <button type="button" class="tracker-tab on" data-tab="apps" data-i18n="tab_apps">申请</button>
+        <button type="button" class="tracker-tab" data-tab="outreach" data-i18n="tab_outreach">触达</button>
+      </div>
+      <div id="appsPane">
+        <div class="tracker-stats" id="trackerStats"></div>
+        <div class="action-row">
+          <button class="btn ghost" id="btnRefreshTracker" data-i18n="btn_refresh">刷新</button>
+        </div>
+        <div id="trackerList" class="tracker-list"></div>
+      </div>
+      <div id="outreachPane" class="hidden" hidden>
+        <div class="tracker-stats" id="outreachStats"></div>
+        <div class="action-row">
+          <button class="btn ghost" id="btnRefreshOutreach" data-i18n="btn_refresh">刷新</button>
+        </div>
+        <div id="outreachList" class="tracker-list"></div>
+      </div>
     </main>
 
     <!-- EVENTS：只展示自动推荐，无搜索主交互 -->
     <main id="view-events" class="view hidden">
       <section class="hero compact">
-        <p class="eyebrow">AUTO · LUMA</p>
-        <h1>为你筛选的活动</h1>
-        <p class="lede">根据活动城市与简历自动匹配。路径报告里也会附带同一批推荐。</p>
+        <p class="eyebrow" data-i18n="hero_eyebrow_events">自动 · 活动</p>
+        <h1 data-i18n="events_title">为你筛选的活动</h1>
+        <p class="lede" data-i18n="events_lede">根据活动城市与简历自动匹配。路径报告里也会附带同一批推荐。</p>
       </section>
       <div id="eventList" class="card-list"></div>
     </main>
@@ -260,17 +335,17 @@
     <!-- PROFILE -->
     <main id="view-profile" class="view hidden">
       <section class="hero compact">
-        <p class="eyebrow">PROFILE</p>
-        <h1>你的画像</h1>
+        <p class="eyebrow" data-i18n="hero_eyebrow_profile">个人画像</p>
+        <h1 data-i18n="profile_title">你的画像</h1>
       </section>
       <div class="profile-grid" id="profileView"></div>
       <div class="action-row" style="margin-top:16px">
-        <button class="btn ghost" id="btnEditSetup">去 Setup 修改</button>
+        <button class="btn ghost" id="btnEditSetup" data-i18n="btn_edit_setup">去设置修改</button>
       </div>
     </main>
 
     <footer class="footer">
-      <span>职块 · 完整路径 · 不自动投递</span>
+      <span data-i18n="footer_main">职块 · 完整路径 · 不自动投递</span>
       <span class="muted">Board · DeJob · X · Luma</span>
     </footer>
   </div>

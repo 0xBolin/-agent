@@ -50,6 +50,7 @@ function writeStatus(s: PipelineStatus): void {
 
 export async function runAutoPipeline(opts?: {
   limitPerSource?: number;
+  lang?: "zh" | "en";
 }): Promise<{
   status: PipelineStatus;
   shortlist: Job[];
@@ -168,8 +169,19 @@ export async function runAutoPipeline(opts?: {
       events_count: events.length,
     });
 
-    const path = buildCareerPath(profile, report.shortlist, events);
+    const pathLang = opts?.lang === "en" ? "en" : "zh";
+    const path = buildCareerPath(profile, report.shortlist, events, {
+      lang: pathLang,
+    });
     saveCareerPath(path);
+
+    // Phase 1：同步本周任务板
+    try {
+      const { buildWeekPlan } = await import("../track/week-plan.js");
+      buildWeekPlan({ path, keepDone: true, lang: pathLang });
+    } catch (e) {
+      console.warn("[pipeline] week plan:", (e as Error).message);
+    }
 
     const done: PipelineStatus = {
       status: "done",
