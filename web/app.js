@@ -529,9 +529,18 @@ async function api(path, opts = {}) {
   if (res.status === 401) {
     setToken("");
     showAuth(true);
-    throw new Error(data.error || "请先登录");
+    throw new Error(
+      data.message || data.error || (lang === "zh" ? "请先登录" : "Please sign in")
+    );
   }
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  if (!res.ok) {
+    throw new Error(
+      data.message ||
+        data.error ||
+        res.statusText ||
+        (lang === "zh" ? `请求失败 ${res.status}` : `Request failed ${res.status}`)
+    );
+  }
   return data;
 }
 
@@ -544,15 +553,27 @@ function splitList(s) {
     .map((x) => x.trim())
     .filter(Boolean);
 }
+let toastTimer = null;
 function toast(msg, err = false) {
-  const el = $("#toast");
-  if (!el) return;
+  let el = $("#toast");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "toast";
+    el.className = "toast";
+    el.setAttribute("role", "status");
+    document.body.appendChild(el);
+  }
   el.hidden = false;
-  el.textContent = msg;
-  el.classList.toggle("err", err);
-  setTimeout(() => {
+  el.removeAttribute("hidden");
+  el.classList.toggle("err", !!err);
+  el.classList.add("show");
+  el.textContent = String(msg || (err ? "Error" : "OK"));
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.classList.remove("show");
     el.hidden = true;
-  }, 4000);
+    el.setAttribute("hidden", "");
+  }, 4200);
 }
 function escapeHtml(s) {
   return String(s ?? "")
@@ -1449,18 +1470,37 @@ function renderImprove(improve) {
     .join("");
 }
 
-/** shortlist 岗位快照：避免把 JSON 塞进 HTML 属性（易截断/解析失败导致按钮“点不动”） */
+/** shortlist 岗位快照（内存 Map，不塞 HTML 属性） */
 const shortlistJobById = new Map();
 
+function stableJobId(j) {
+  if (!j) return "";
+  if (j.id != null && String(j.id).trim()) return String(j.id).trim();
+  if (j.source_url) return `url:${j.source_url}`;
+  return `t:${j.company || ""}|${j.title || ""}`;
+}
+
 function jobSnapshot(j) {
-  if (!j || !j.id) return null;
+  if (!j) return null;
+  const id = stableJobId(j);
+  if (!id) return null;
   return {
-    id: String(j.id),
+    id,
     title: j.title || "",
     company: j.company || "",
     source_url: j.source_url || "",
     source: j.source || "",
-    match: j.match ? { score: j.match.score, summary: j.match.summary } : undefined,
+    role_family: j.role_family || "",
+    remote_type: j.remote_type || "",
+    match: j.match
+      ? {
+          score: j.match.score,
+          summary: j.match.summary,
+          strengths: j.match.strengths,
+          gaps: j.match.gaps,
+          action: j.match.action,
+        }
+      : undefined,
   };
 }
 
@@ -1470,12 +1510,14 @@ function renderShortlist(jobs) {
   shortlistJobById.clear();
   if (!jobs?.length) {
     el.innerHTML = emptyCard("—");
+    bindShortlistActions();
     return;
   }
   el.innerHTML = jobs
-    .map((j) => {
+    .map((j, idx) => {
       const snap = jobSnapshot(j);
-      if (snap) shortlistJobById.set(snap.id, snap);
+      if (!snap) return "";
+      shortlistJobById.set(snap.id, snap);
       const score = j.match?.score ?? "—";
       const high = Number(score) >= 70;
       const src =
@@ -1483,46 +1525,60 @@ function renderShortlist(jobs) {
           ? "X"
           : j.source === "dejob.ai"
             ? "DeJob"
-            : j.source;
-      const jid = escapeAttr(String(j.id || ""));
+            : j.source || "";
+      const jid = escapeAttr(snap.id);
+      const summary = j.match?.summary || "";
+      const strengths = j.match?.strengths || [];
+      const gaps = j.match?.gaps || [];
       return `
-      <article class="card" data-job-id="${jid}">
+      <article class="card job-card" data-job-id="${jid}" data-idx="${idx}">
         <div class="card-top">
-          <div>
-            <h3>${escapeHtml(j.title)} <span class="muted">@ ${escapeHtml(
-        j.company
-      )}</span></h3>
-            <div class="meta">${escapeHtml(j.role_family || "")} · ${escapeHtml(
-        j.remote_type || ""
-      )} · ${escapeHtml(src || "")}</div>
+          <div class="job-card-main">
+            <h3 class="job-title">${escapeHtml(j.title || "—")}
+              <span class="muted">@ ${escapeHtml(j.company || "—")}</span>
+            </h3>
+            <div class="meta">${[
+              j.role_family,
+              j.remote_type,
+              src,
+            ]
+              .filter(Boolean)
+              .map((x) => escapeHtml(x))
+              .join(" · ")}</div>
           </div>
-          <div class="score ${high ? "high" : ""}">${score} · ${escapeHtml(
-        j.match?.action || ""
-      )}</div>
+          <div class="score ${high ? "high" : ""}">${escapeHtml(String(score))}${
+            j.match?.action
+              ? ` · ${escapeHtml(j.match.action)}`
+              : ""
+          }</div>
         </div>
-        <div class="body">
-          ${escapeHtml(j.match?.summary || "")}<br/>
+        ${
+          summary || strengths.length || gaps.length
+            ? `<div class="body job-card-body">
+          ${summary ? `<p class="job-summary">${escapeHtml(summary)}</p>` : ""}
           ${
-            j.match?.strengths?.length
-              ? escapeHtml(j.match.strengths.join("；")) + "<br/>"
+            strengths.length
+              ? `<p class="job-tags ok">${escapeHtml(strengths.join(lang === "en" ? "; " : "；"))}</p>`
               : ""
           }
           ${
-            j.match?.gaps?.length
-              ? escapeHtml(j.match.gaps.join("；")) + "<br/>"
+            gaps.length
+              ? `<p class="job-tags gap">${escapeHtml(gaps.join(lang === "en" ? "; " : "；"))}</p>`
               : ""
           }
-          <div class="card-actions">
-            <a class="btn ghost sm" href="${escapeAttr(
-              j.source_url || "#"
-            )}" target="_blank" rel="noopener">${escapeHtml(t("btn_open"))}</a>
-            <button type="button" class="btn ghost sm btn-track" data-action="track" data-job-id="${jid}">${escapeHtml(
-              t("btn_track")
-            )}</button>
-            <button type="button" class="btn ghost sm btn-battle" data-action="battle" data-job-id="${jid}">${escapeHtml(
-              t("btn_battle")
-            )}</button>
-          </div>
+        </div>`
+            : ""
+        }
+        <div class="card-actions">
+          <a class="btn ghost sm" href="${escapeAttr(
+            j.source_url || "#"
+          )}" target="_blank" rel="noopener">${escapeHtml(t("btn_open"))}</a>
+          <button type="button" class="btn ghost sm" data-action="track" data-job-id="${jid}">${escapeHtml(
+            t("btn_track")
+          )}</button>
+          <button type="button" class="btn primary sm" data-action="battle" data-job-id="${jid}">${escapeHtml(
+            t("btn_battle")
+          )}</button>
         </div>
       </article>`;
     })
@@ -1532,60 +1588,85 @@ function renderShortlist(jobs) {
 }
 
 let shortlistActionsBound = false;
-function bindShortlistActions() {
-  const el = $("#shortlist");
-  if (!el || shortlistActionsBound) return;
-  shortlistActionsBound = true;
-  el.addEventListener("click", async (e) => {
-    const btn = e.target.closest("[data-action]");
-    if (!btn || !el.contains(btn)) return;
-    const action = btn.getAttribute("data-action");
-    const id = btn.getAttribute("data-job-id") || "";
-    const job = shortlistJobById.get(id);
-    if (!job) {
-      toast(lang === "zh" ? "岗位数据已失效，请刷新计划页" : "Job data stale — refresh Plan", true);
-      return;
-    }
-    e.preventDefault();
-    e.stopPropagation();
-    if (action === "track") {
-      btn.disabled = true;
-      try {
-        const r = await api("/api/applications", {
-          method: "POST",
-          body: JSON.stringify({ job }),
-        });
-        toast(r.created ? t("toast_tracked") : t("toast_already"));
+async function handleShortlistAction(action, id, btn) {
+  const job = shortlistJobById.get(id);
+  if (!job) {
+    toast(
+      lang === "zh" ? "岗位数据已失效，请点「重新生成」刷新计划" : "Job data stale — regenerate Plan",
+      true
+    );
+    return;
+  }
+  if (action === "track") {
+    if (btn) btn.disabled = true;
+    try {
+      const r = await api("/api/applications", {
+        method: "POST",
+        body: JSON.stringify({ job, job_id: job.id }),
+      });
+      toast(
+        r.created
+          ? lang === "zh"
+            ? "已加入申请追踪，可到「申请」页查看"
+            : "Added — open Tracker tab"
+          : t("toast_already")
+      );
+      if (btn) {
         btn.textContent = t("btn_tracked");
-      } catch (err) {
-        btn.disabled = false;
-        toast(err.message || String(err), true);
+        btn.disabled = true;
       }
-      return;
+      trackerCache = null;
+    } catch (err) {
+      if (btn) btn.disabled = false;
+      toast(err.message || String(err), true);
     }
-    if (action === "battle") {
-      btn.disabled = true;
-      try {
-        const r = await api("/api/battle-pack", {
-          method: "POST",
-          body: JSON.stringify({
-            job_id: job.id,
-            job,
-            lang,
-          }),
-        });
-        if (!r?.pack) {
-          toast(lang === "zh" ? "作战包生成失败" : "Battle pack failed", true);
-          return;
-        }
-        showBattlePack(r.pack);
-      } catch (err) {
-        toast(err.message || String(err), true);
-      } finally {
-        btn.disabled = false;
+    return;
+  }
+  if (action === "battle") {
+    if (btn) btn.disabled = true;
+    toast(lang === "zh" ? "正在生成作战包…" : "Generating battle pack…");
+    try {
+      const r = await api("/api/battle-pack", {
+        method: "POST",
+        body: JSON.stringify({
+          job_id: job.id,
+          job,
+          lang,
+        }),
+      });
+      if (!r?.pack) {
+        toast(lang === "zh" ? "作战包生成失败" : "Battle pack failed", true);
+        return;
       }
+      showBattlePack(r.pack);
+    } catch (err) {
+      toast(err.message || String(err), true);
+    } finally {
+      if (btn) btn.disabled = false;
     }
-  });
+  }
+}
+
+function bindShortlistActions() {
+  if (shortlistActionsBound) return;
+  shortlistActionsBound = true;
+  // 绑在 document：即使 #shortlist 重渲 / 换页也能点到
+  document.addEventListener(
+    "click",
+    (e) => {
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      const btn = t.closest("#shortlist [data-action]");
+      if (!btn) return;
+      const action = btn.getAttribute("data-action");
+      const id = btn.getAttribute("data-job-id") || "";
+      if (!action || !id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void handleShortlistAction(action, id, btn);
+    },
+    true
+  );
 }
 
 /* —— Phase 1: week plan + tracker —— */

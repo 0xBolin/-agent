@@ -213,7 +213,6 @@
               <button type="button" class="btn primary hidden" id="btnSave" data-i18n="btn_save">生成求职路径</button>
             </div>
           </div>
-          <div class="toast" id="toast" hidden></div>
         </div>
       </div>
     </main>
@@ -332,23 +331,25 @@
       </div>
     </main>
 
-    <!-- 作战包弹层：放在 view 外，避免被 .view.hidden 或层叠上下文挡住 -->
-    <div id="battlePackModal" class="bp-modal hidden" hidden>
-      <div class="bp-backdrop" id="bpBackdrop"></div>
-      <div class="bp-sheet" role="dialog" aria-modal="true" aria-labelledby="bpTitle">
-        <div class="bp-head">
-          <h3 id="bpTitle">作战包</h3>
-          <button type="button" class="btn ghost sm" id="bpClose" aria-label="Close">×</button>
-        </div>
-        <div id="bpBody" class="bp-body"></div>
-      </div>
-    </div>
-
     <footer class="footer">
       <span data-i18n="footer_main">职块 · 完整路径 · 不自动投递</span>
       <span class="muted">Board · DeJob · X · Luma</span>
     </footer>
   </div>
+
+  <!-- 全局浮层：必须在 view 外，否则计划页上看不见 toast / 弹层 -->
+  <div class="toast" id="toast" hidden role="status" aria-live="polite"></div>
+  <div id="battlePackModal" class="bp-modal hidden" hidden>
+    <div class="bp-backdrop" id="bpBackdrop"></div>
+    <div class="bp-sheet" role="dialog" aria-modal="true" aria-labelledby="bpTitle">
+      <div class="bp-head">
+        <h3 id="bpTitle">作战包</h3>
+        <button type="button" class="btn ghost sm" id="bpClose" aria-label="Close">×</button>
+      </div>
+      <div id="bpBody" class="bp-body"></div>
+    </div>
+  </div>
+
   <script src="/app.js"></script>
 </body>
 </html>

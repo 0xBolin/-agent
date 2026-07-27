@@ -5,7 +5,7 @@ import type { Job, Profile } from "../types.js";
 import { formatProofCard } from "../profile/proof.js";
 
 function cleanCompany(company: string): string {
-  return company
+  return String(company || "")
     .replace(/^@/, "")
     .replace(/\s+/g, " ")
     .replace(/\s*(Inc\.?|Ltd\.?|LLC|Limited|协议|公司)\s*$/i, "")
@@ -136,10 +136,10 @@ export function buildBattlePack(
       : `${opening_zh}${socialBit ? `\n${socialBit}` : ""}`;
 
   return {
-    job_id: job.id,
-    company: job.company,
-    title: job.title,
-    source_url: job.source_url,
+    job_id: job.id || "unknown",
+    company: job.company || "Company",
+    title: job.title || "Role",
+    source_url: job.source_url || "",
     score,
     why: why.slice(0, 3),
     risks: risks.slice(0, 3),

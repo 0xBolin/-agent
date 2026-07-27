@@ -1177,23 +1177,37 @@ async function handleRequest(
         const body = JSON.parse((await readBody(req)) || "{}");
         const profile = getProfile();
         if (!profile) {
-          send(res, 400, { error: "请先完成 Setup" });
+          send(res, 400, {
+            error: "setup_required",
+            message: "请先完成 Setup（设置页）再生成作战包",
+          });
           return;
         }
         const jobs = loadJobs();
-        let job = body.job_id
-          ? jobs.find((j) => j.id === body.job_id)
-          : null;
-        if (!job && body.job?.id) {
-          job = { ...(body.job as import("./types.js").Job) };
+        const sl = loadShortlist();
+        const wantId = String(body.job_id || body.job?.id || "");
+        let job =
+          (wantId && jobs.find((j) => j.id === wantId)) ||
+          (wantId && sl.find((j) => j.id === wantId)) ||
+          null;
+        // 前端短名单快照优先兜底（磁盘丢 job 库时仍可出包）
+        if (!job && body.job && (body.job.id || body.job.title)) {
+          job = {
+            id: String(body.job.id || wantId || "snapshot"),
+            title: String(body.job.title || "Role"),
+            company: String(body.job.company || "Company"),
+            source_url: String(body.job.source_url || ""),
+            source: String(body.job.source || "shortlist"),
+            role_family: body.job.role_family,
+            remote_type: body.job.remote_type,
+            match: body.job.match,
+          } as import("./types.js").Job;
         }
         if (!job) {
-          // shortlist 里找
-          const sl = loadShortlist();
-          job = sl.find((j) => j.id === body.job_id) || null;
-        }
-        if (!job) {
-          send(res, 404, { error: "找不到岗位" });
+          send(res, 404, {
+            error: "job_not_found",
+            message: "找不到岗位，请重新生成计划后再试",
+          });
           return;
         }
         const pack = buildBattlePack(
