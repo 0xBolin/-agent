@@ -506,7 +506,7 @@ async function handleRequest(
     // Agent：生成链接前先解析 PDF（无需专属页登录）
     if (p === "/api/agent/resume-parse" && req.method === "POST") {
       try {
-        const body = JSON.parse(await readBody(req));
+        const body = await readJsonBody(req);
         const b64 = String(body.pdfBase64 || body.pdf || "").replace(
           /^data:application\/pdf;base64,/,
           ""
@@ -569,7 +569,7 @@ async function handleRequest(
       req.method === "POST" &&
       !isX402SdkConfigured()
     ) {
-      const body = JSON.parse((await readBody(req)) || "{}");
+      const body = await readJsonBody(req);
       const address = body.address || "";
       const paymentHeader =
         (req.headers["x-payment"] as string) ||
@@ -594,9 +594,11 @@ async function handleRequest(
       }
 
       const r = processUnlock({
-        address,
-        paymentHeader,
-        paymentProof: body.paymentProof,
+        address: String(address || ""),
+        paymentHeader: paymentHeader ? String(paymentHeader) : undefined,
+        paymentProof: body.paymentProof
+          ? String(body.paymentProof)
+          : undefined,
         dev: Boolean(body.dev),
       });
       if (!r.ok) {
@@ -792,7 +794,7 @@ async function handleRequest(
 
       if (p === "/api/profile" && req.method === "POST") {
         if (!requireEntitled()) return;
-        const body = JSON.parse(await readBody(req));
+        const body = await readJsonBody(req);
         const { profile, warnings } = saveProfileFromInput(
           body.profile || body
         );
@@ -886,7 +888,7 @@ async function handleRequest(
       /** 仅切换路径正文语言（不重新扫岗） */
       if (p === "/api/path/lang" && req.method === "POST") {
         if (!requireEntitled()) return;
-        const body = JSON.parse((await readBody(req)) || "{}");
+        const body = await readJsonBody(req);
         const want = String(body.lang || "").toLowerCase();
         if (want !== "zh" && want !== "en") {
           send(res, 400, { error: "lang must be zh or en" });
@@ -928,7 +930,7 @@ async function handleRequest(
           });
           return;
         }
-        const body = JSON.parse((await readBody(req)) || "{}");
+        const body = await readJsonBody(req);
         const pathLang =
           body.lang === "en" || body.lang === "zh" ? body.lang : "zh";
         runningPipelines.add(uid);
@@ -968,7 +970,7 @@ async function handleRequest(
 
       if (p === "/api/scan" && req.method === "POST") {
         if (!requireEntitled()) return;
-        const body = JSON.parse((await readBody(req)) || "{}");
+        const body = await readJsonBody(req);
         const limit = Number(body.limit) || 20;
         const result = await scanAll({
           limitPerSource: limit,
@@ -985,7 +987,7 @@ async function handleRequest(
           send(res, 400, { error: "请先完成 Setup" });
           return;
         }
-        const body = JSON.parse((await readBody(req)) || "{}");
+        const body = await readJsonBody(req);
         const jobs = loadJobs();
         if (!jobs.length) {
           send(res, 400, { error: "岗位库为空，请先扫描" });
@@ -1045,7 +1047,7 @@ async function handleRequest(
 
       if (p === "/api/week-plan/rebuild" && req.method === "POST") {
         if (!requireEntitled()) return;
-        const body = JSON.parse((await readBody(req)) || "{}");
+        const body = await readJsonBody(req);
         const lang =
           body.lang === "en" || body.lang === "zh"
             ? body.lang
@@ -1057,13 +1059,22 @@ async function handleRequest(
 
       if (p === "/api/week-plan/task" && req.method === "POST") {
         if (!requireEntitled()) return;
-        const body = JSON.parse((await readBody(req)) || "{}");
-        const taskId = body.task_id || body.id;
+        const body = await readJsonBody(req);
+        const taskId = String(
+          body.task_id || body.taskId || body.id || ""
+        ).trim();
         if (!taskId) {
-          send(res, 400, { error: "需要 task_id" });
+          send(res, 400, {
+            error: "需要 task_id",
+            message: "需要 task_id",
+            received_keys: Object.keys(body),
+          });
           return;
         }
-        const plan = toggleWeekTask(taskId, body.done);
+        const plan = toggleWeekTask(
+          taskId,
+          typeof body.done === "boolean" ? body.done : undefined
+        );
         if (!plan) {
           send(res, 404, { error: "任务不存在，请先生成 Plan" });
           return;
@@ -1112,7 +1123,7 @@ async function handleRequest(
         const id = decodeURIComponent(
           p.replace("/api/applications/", "").split("/")[0]
         );
-        const body = JSON.parse((await readBody(req)) || "{}");
+        const body = await readJsonBody(req);
         const app = patchApplication(id, body);
         if (!app) {
           send(res, 404, { error: "申请记录不存在" });
@@ -1163,12 +1174,28 @@ async function handleRequest(
 
       if (p === "/api/outreach" && req.method === "POST") {
         if (!requireEntitled()) return;
-        const body = JSON.parse((await readBody(req)) || "{}");
-        if (!body.company || !body.who) {
+        const body = await readJsonBody(req);
+        const company = String(body.company || "").trim();
+        const who = String(body.who || "").trim();
+        if (!company || !who) {
           send(res, 400, { error: "需要 company 与 who" });
           return;
         }
-        const r = addOutreach(body);
+        const r = addOutreach({
+          company,
+          who,
+          job_title: body.job_title ? String(body.job_title) : undefined,
+          linkedin_url: body.linkedin_url
+            ? String(body.linkedin_url)
+            : undefined,
+          x_url: body.x_url ? String(body.x_url) : undefined,
+          dm_draft: body.dm_draft ? String(body.dm_draft) : undefined,
+          notes: body.notes ? String(body.notes) : undefined,
+          follow_up_days:
+            typeof body.follow_up_days === "number"
+              ? body.follow_up_days
+              : undefined,
+        });
         send(res, 200, {
           ok: true,
           created: r.created,
@@ -1186,7 +1213,7 @@ async function handleRequest(
         const id = decodeURIComponent(
           p.replace("/api/outreach/", "").split("/")[0]
         );
-        const body = JSON.parse((await readBody(req)) || "{}");
+        const body = await readJsonBody(req);
         const c = patchOutreach(id, body);
         if (!c) {
           send(res, 404, { error: "触达记录不存在" });
