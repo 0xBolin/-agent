@@ -1247,7 +1247,20 @@ async function handleRequest(
             source_url: String(
               nested?.source_url || body.source_url || ""
             ),
-            source: String(nested?.source || body.source || "shortlist"),
+            source: (() => {
+              const s = String(nested?.source || body.source || "other");
+              const ok = [
+                "web3.career",
+                "dejob.ai",
+                "telegram",
+                "paste",
+                "x",
+                "other",
+              ] as const;
+              return (ok as readonly string[]).includes(s)
+                ? (s as (typeof ok)[number])
+                : "other";
+            })(),
             role_family: (nested?.role_family as string) || undefined,
             remote_type: (nested?.remote_type as string) || undefined,
             match: (nested?.match as import("./types.js").Job["match"]) || undefined,

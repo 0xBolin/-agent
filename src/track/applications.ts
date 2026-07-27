@@ -13,6 +13,24 @@ import {
 } from "../store/fs-store.js";
 import { dataDir } from "../paths.js";
 
+type JobSource = Job["source"];
+
+function asJobSource(raw: unknown): JobSource | undefined {
+  const s = String(raw || "").trim();
+  const allowed: JobSource[] = [
+    "web3.career",
+    "dejob.ai",
+    "telegram",
+    "paste",
+    "x",
+    "other",
+  ];
+  if ((allowed as string[]).includes(s)) return s as JobSource;
+  if (!s) return undefined;
+  // shortlist / url 快照等非标准来源
+  return "other";
+}
+
 export const TRACKER_STATUSES: ApplicationStatus[] = [
   "interested",
   "applied",
@@ -136,7 +154,7 @@ export function addFromShortlistPayload(body: {
         title: nested.title || body.title,
         company: nested.company || body.company,
         source_url: nested.source_url || body.source_url,
-        source: nested.source || body.source,
+        source: asJobSource(nested.source || body.source),
       } as Partial<Job> & { id: string };
     } else if (body.title || body.company) {
       job = {
@@ -144,7 +162,7 @@ export function addFromShortlistPayload(body: {
         title: body.title,
         company: body.company,
         source_url: body.source_url,
-        source: body.source,
+        source: asJobSource(body.source),
       };
     }
   }
@@ -161,7 +179,7 @@ export function addFromShortlistPayload(body: {
         title: title || nested?.title || "Role",
         company: company || nested?.company || "Company",
         source_url: nested?.source_url || body.source_url || "",
-        source: nested?.source || body.source || "shortlist",
+        source: asJobSource(nested?.source || body.source) || "other",
       };
     }
   }
