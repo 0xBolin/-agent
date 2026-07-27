@@ -169,6 +169,44 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+/** 优先用 Express 已解析的 req.body，避免空 body / 二次 parse 丢字段 */
+function getJsonBody(req: http.IncomingMessage): Record<string, unknown> {
+  const withBody = req as http.IncomingMessage & { body?: unknown };
+  const b = withBody.body;
+  if (b && typeof b === "object" && !Buffer.isBuffer(b) && !Array.isArray(b)) {
+    return b as Record<string, unknown>;
+  }
+  if (typeof b === "string" && b.trim()) {
+    try {
+      const parsed = JSON.parse(b);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  return {};
+}
+
+async function readJsonBody(
+  req: http.IncomingMessage
+): Promise<Record<string, unknown>> {
+  const fromExpress = getJsonBody(req);
+  if (Object.keys(fromExpress).length > 0) return fromExpress;
+  const raw = await readBody(req);
+  if (!raw || !raw.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    /* */
+  }
+  return {};
+}
+
 function serveStatic(urlPath: string, res: http.ServerResponse) {
   let rel = urlPath === "/" ? "/index.html" : urlPath;
   rel = rel.split("?")[0];
@@ -1049,11 +1087,15 @@ async function handleRequest(
 
       if (p === "/api/applications" && req.method === "POST") {
         if (!requireEntitled()) return;
-        const body = JSON.parse((await readBody(req)) || "{}");
-        // shortlist 一键加入：{ job_id } 或 { job: {...} }
-        const r = addFromShortlistPayload(body);
+        const body = await readJsonBody(req);
+        // shortlist 一键加入：{ job_id } 或 { job: {...} } 或扁平 title/company
+        const r = addFromShortlistPayload(body as Parameters<typeof addFromShortlistPayload>[0]);
         if ("error" in r) {
-          send(res, 400, { error: r.error });
+          send(res, 400, {
+            error: r.error,
+            message: r.error,
+            received_keys: Object.keys(body),
+          });
           return;
         }
         send(res, 200, {
@@ -1174,7 +1216,7 @@ async function handleRequest(
       // —— Phase 2：一岗一策 ——
       if (p === "/api/battle-pack" && req.method === "POST") {
         if (!requireEntitled()) return;
-        const body = JSON.parse((await readBody(req)) || "{}");
+        const body = await readJsonBody(req);
         const profile = getProfile();
         if (!profile) {
           send(res, 400, {
@@ -1185,28 +1227,37 @@ async function handleRequest(
         }
         const jobs = loadJobs();
         const sl = loadShortlist();
-        const wantId = String(body.job_id || body.job?.id || "");
+        const nested =
+          body.job && typeof body.job === "object"
+            ? (body.job as Record<string, unknown>)
+            : null;
+        const wantId = String(body.job_id || nested?.id || "").trim();
         let job =
           (wantId && jobs.find((j) => j.id === wantId)) ||
           (wantId && sl.find((j) => j.id === wantId)) ||
           null;
-        // 前端短名单快照优先兜底（磁盘丢 job 库时仍可出包）
-        if (!job && body.job && (body.job.id || body.job.title)) {
+        // 前端短名单快照兜底（磁盘丢 job 库 / body 只有快照时）
+        const snapTitle = String(nested?.title || body.title || "").trim();
+        const snapCompany = String(nested?.company || body.company || "").trim();
+        if (!job && (wantId || snapTitle || snapCompany)) {
           job = {
-            id: String(body.job.id || wantId || "snapshot"),
-            title: String(body.job.title || "Role"),
-            company: String(body.job.company || "Company"),
-            source_url: String(body.job.source_url || ""),
-            source: String(body.job.source || "shortlist"),
-            role_family: body.job.role_family,
-            remote_type: body.job.remote_type,
-            match: body.job.match,
+            id: wantId || `snap_${snapCompany}|${snapTitle}`.slice(0, 80),
+            title: snapTitle || String(nested?.title || "Role"),
+            company: snapCompany || String(nested?.company || "Company"),
+            source_url: String(
+              nested?.source_url || body.source_url || ""
+            ),
+            source: String(nested?.source || body.source || "shortlist"),
+            role_family: (nested?.role_family as string) || undefined,
+            remote_type: (nested?.remote_type as string) || undefined,
+            match: (nested?.match as import("./types.js").Job["match"]) || undefined,
           } as import("./types.js").Job;
         }
         if (!job) {
           send(res, 404, {
             error: "job_not_found",
-            message: "找不到岗位，请重新生成计划后再试",
+            message: "找不到岗位，请刷新计划页后重试",
+            received_keys: Object.keys(body),
           });
           return;
         }

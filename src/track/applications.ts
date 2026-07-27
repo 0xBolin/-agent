@@ -9,6 +9,7 @@ import {
   loadApplications,
   saveApplication,
   loadJobs,
+  loadShortlist,
 } from "../store/fs-store.js";
 import { dataDir } from "../paths.js";
 
@@ -104,28 +105,72 @@ export function addFromJob(
 
 export function addFromShortlistPayload(body: {
   job_id?: string;
-  job?: Partial<Job> & { id?: string };
+  job?: Partial<Job> & { id?: string; title?: string; company?: string };
+  title?: string;
+  company?: string;
+  source_url?: string;
+  source?: string;
   status?: ApplicationStatus;
   follow_up_days?: number;
   notes?: string;
 }): { app: Application; created: boolean } | { error: string } {
   const jobs = loadJobs();
+  const sl = loadShortlist();
+  const nested = body.job && typeof body.job === "object" ? body.job : undefined;
+
+  const wantId = String(
+    body.job_id || nested?.id || ""
+  ).trim();
+
   let job: (Partial<Job> & { id: string }) | undefined;
 
-  if (body.job?.id) {
-    job = { ...body.job, id: body.job.id } as Partial<Job> & { id: string };
-    const fromStore = jobs.find((j) => j.id === body.job!.id);
-    if (fromStore) job = { ...fromStore, ...job };
-  } else if (body.job_id) {
-    const fromStore = jobs.find((j) => j.id === body.job_id);
-    if (fromStore) job = fromStore;
-    else if (body.job) {
-      job = { ...body.job, id: body.job_id } as Partial<Job> & { id: string };
-    } else {
-      return { error: "找不到该岗位，请带上 job 快照字段" };
+  if (wantId) {
+    const fromStore =
+      jobs.find((j) => j.id === wantId) || sl.find((j) => j.id === wantId);
+    if (fromStore) {
+      job = { ...fromStore, ...(nested || {}) };
+    } else if (nested) {
+      job = {
+        ...nested,
+        id: wantId,
+        title: nested.title || body.title,
+        company: nested.company || body.company,
+        source_url: nested.source_url || body.source_url,
+        source: nested.source || body.source,
+      } as Partial<Job> & { id: string };
+    } else if (body.title || body.company) {
+      job = {
+        id: wantId,
+        title: body.title,
+        company: body.company,
+        source_url: body.source_url,
+        source: body.source,
+      };
     }
-  } else {
-    return { error: "需要 job_id 或 job.id" };
+  }
+
+  // 无 id：用 title+company 合成，允许纯快照加入追踪
+  if (!job) {
+    const title = String(nested?.title || body.title || "").trim();
+    const company = String(nested?.company || body.company || "").trim();
+    if (title || company) {
+      const synth = wantId || `snap_${company}|${title}`.slice(0, 80);
+      job = {
+        ...(nested || {}),
+        id: synth,
+        title: title || nested?.title || "Role",
+        company: company || nested?.company || "Company",
+        source_url: nested?.source_url || body.source_url || "",
+        source: nested?.source || body.source || "shortlist",
+      };
+    }
+  }
+
+  if (!job?.id) {
+    return {
+      error:
+        "需要岗位信息（job_id / job.id / title）。请刷新计划页后重试。",
+    };
   }
 
   return addFromJob(job, {

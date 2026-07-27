@@ -1470,13 +1470,13 @@ function renderImprove(improve) {
     .join("");
 }
 
-/** shortlist 岗位快照（内存 Map，不塞 HTML 属性） */
-const shortlistJobById = new Map();
+/** shortlist 岗位快照：用数组下标查找，避免 id 在 HTML 属性中损坏 */
+let shortlistJobsCache = [];
 
 function stableJobId(j) {
   if (!j) return "";
   if (j.id != null && String(j.id).trim()) return String(j.id).trim();
-  if (j.source_url) return `url:${j.source_url}`;
+  if (j.source_url) return `url:${String(j.source_url).slice(0, 180)}`;
   return `t:${j.company || ""}|${j.title || ""}`;
 }
 
@@ -1507,7 +1507,7 @@ function jobSnapshot(j) {
 function renderShortlist(jobs) {
   const el = $("#shortlist");
   if (!el) return;
-  shortlistJobById.clear();
+  shortlistJobsCache = [];
   if (!jobs?.length) {
     el.innerHTML = emptyCard("—");
     bindShortlistActions();
@@ -1517,7 +1517,7 @@ function renderShortlist(jobs) {
     .map((j, idx) => {
       const snap = jobSnapshot(j);
       if (!snap) return "";
-      shortlistJobById.set(snap.id, snap);
+      shortlistJobsCache[idx] = snap;
       const score = j.match?.score ?? "—";
       const high = Number(score) >= 70;
       const src =
@@ -1526,12 +1526,11 @@ function renderShortlist(jobs) {
           : j.source === "dejob.ai"
             ? "DeJob"
             : j.source || "";
-      const jid = escapeAttr(snap.id);
       const summary = j.match?.summary || "";
       const strengths = j.match?.strengths || [];
       const gaps = j.match?.gaps || [];
       return `
-      <article class="card job-card" data-job-id="${jid}" data-idx="${idx}">
+      <article class="card job-card" data-idx="${idx}">
         <div class="card-top">
           <div class="job-card-main">
             <h3 class="job-title">${escapeHtml(j.title || "—")}
@@ -1573,10 +1572,10 @@ function renderShortlist(jobs) {
           <a class="btn ghost sm" href="${escapeAttr(
             j.source_url || "#"
           )}" target="_blank" rel="noopener">${escapeHtml(t("btn_open"))}</a>
-          <button type="button" class="btn ghost sm" data-action="track" data-job-id="${jid}">${escapeHtml(
+          <button type="button" class="btn ghost sm" data-action="track" data-idx="${idx}">${escapeHtml(
             t("btn_track")
           )}</button>
-          <button type="button" class="btn primary sm" data-action="battle" data-job-id="${jid}">${escapeHtml(
+          <button type="button" class="btn primary sm" data-action="battle" data-idx="${idx}">${escapeHtml(
             t("btn_battle")
           )}</button>
         </div>
@@ -1588,9 +1587,21 @@ function renderShortlist(jobs) {
 }
 
 let shortlistActionsBound = false;
-async function handleShortlistAction(action, id, btn) {
-  const job = shortlistJobById.get(id);
-  if (!job) {
+
+function trackPayload(job) {
+  return {
+    job_id: job.id,
+    job,
+    title: job.title,
+    company: job.company,
+    source_url: job.source_url,
+    source: job.source,
+  };
+}
+
+async function handleShortlistAction(action, idx, btn) {
+  const job = shortlistJobsCache[Number(idx)];
+  if (!job || !job.id) {
     toast(
       lang === "zh" ? "岗位数据已失效，请点「重新生成」刷新计划" : "Job data stale — regenerate Plan",
       true
@@ -1602,7 +1613,7 @@ async function handleShortlistAction(action, id, btn) {
     try {
       const r = await api("/api/applications", {
         method: "POST",
-        body: JSON.stringify({ job, job_id: job.id }),
+        body: JSON.stringify(trackPayload(job)),
       });
       toast(
         r.created
@@ -1629,8 +1640,7 @@ async function handleShortlistAction(action, id, btn) {
       const r = await api("/api/battle-pack", {
         method: "POST",
         body: JSON.stringify({
-          job_id: job.id,
-          job,
+          ...trackPayload(job),
           lang,
         }),
       });
@@ -1650,7 +1660,6 @@ async function handleShortlistAction(action, id, btn) {
 function bindShortlistActions() {
   if (shortlistActionsBound) return;
   shortlistActionsBound = true;
-  // 绑在 document：即使 #shortlist 重渲 / 换页也能点到
   document.addEventListener(
     "click",
     (e) => {
@@ -1659,11 +1668,11 @@ function bindShortlistActions() {
       const btn = t.closest("#shortlist [data-action]");
       if (!btn) return;
       const action = btn.getAttribute("data-action");
-      const id = btn.getAttribute("data-job-id") || "";
-      if (!action || !id) return;
+      const idx = btn.getAttribute("data-idx");
+      if (!action || idx == null || idx === "") return;
       e.preventDefault();
       e.stopPropagation();
-      void handleShortlistAction(action, id, btn);
+      void handleShortlistAction(action, idx, btn);
     },
     true
   );
