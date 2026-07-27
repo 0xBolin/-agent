@@ -45,15 +45,19 @@ curl -s https://<your-app>.onrender.com/api/health
 
 应返回 `"ok": true`、`"auth": "portal_only"`。
 
-模拟开通（仅 `JOB_BLOCK_DEV_AUTH=1` 时）：
+模拟开通 / 卖家补发权益（仅 `JOB_BLOCK_DEV_AUTH=1` 时；**不走 x402 中间件**）：
 
 ```bash
-curl -s -X POST https://<your-app>.onrender.com/api/access/unlock \
+curl -s -X POST https://<your-app>.onrender.com/api/access/dev-unlock \
   -H 'Content-Type: application/json' \
-  -d '{"address":"0x5555555555555555555555555555555555555555","dev":true}'
+  -d '{"address":"0x你的EVM地址"}'
 ```
 
-把返回的 `portalUrl` 在浏览器打开。
+把返回的 `portalUrl` 在浏览器打开。用完后立刻把 `JOB_BLOCK_DEV_AUTH` 改回 `0`。
+
+> 注意：`/api/access/unlock` 在 x402 启用后会先收 402，**不能**再靠 `dev:true` 绕过；补发请用上面的 `dev-unlock`。
+
+**持久化（重要）**：Free 无 Disk 时每次 Deploy 会清空开通记录与专属链接。请挂 Disk 到 `/var/data`，并设 `JOB_BLOCK_DATA_DIR=/var/data`（与 `render.yaml` 一致）。
 
 ## 6. 与 Agent Prompt
 

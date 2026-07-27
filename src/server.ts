@@ -1355,6 +1355,37 @@ if (isX402SdkConfigured()) {
   );
 }
 
+/**
+ * 卖家/联调：DEV 开通（不走 x402 中间件，否则 402 会拦在验签前）。
+ * 仅 JOB_BLOCK_DEV_AUTH=1 时可用；生产默认关闭。
+ */
+app.post("/api/access/dev-unlock", async (req, res) => {
+  if (!allowDevUnlock()) {
+    res.status(403).json({
+      error: "dev_unlock_disabled",
+      message: "生产请保持 JOB_BLOCK_DEV_AUTH=0；临时补发请设为 1 后调用本接口。",
+    });
+    return;
+  }
+  try {
+    const body = (req.body || {}) as Record<string, unknown>;
+    const address = String(body.address || req.query.address || "");
+    if (!address) {
+      res.status(400).json({ error: "address_required" });
+      return;
+    }
+    // 走统一交付：签发 portal + 合并 resume-pending 缓存
+    const out = await deliverPaidUnlock(body, address);
+    if (out.ok === false) {
+      res.status(400).json(out);
+      return;
+    }
+    res.status(200).json({ ...out, via: "dev-unlock" });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 // 其余 API / 静态资源
 app.use((req, res) => {
   void handleRequest(req, res);
