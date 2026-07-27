@@ -1449,14 +1449,33 @@ function renderImprove(improve) {
     .join("");
 }
 
+/** shortlist 岗位快照：避免把 JSON 塞进 HTML 属性（易截断/解析失败导致按钮“点不动”） */
+const shortlistJobById = new Map();
+
+function jobSnapshot(j) {
+  if (!j || !j.id) return null;
+  return {
+    id: String(j.id),
+    title: j.title || "",
+    company: j.company || "",
+    source_url: j.source_url || "",
+    source: j.source || "",
+    match: j.match ? { score: j.match.score, summary: j.match.summary } : undefined,
+  };
+}
+
 function renderShortlist(jobs) {
   const el = $("#shortlist");
+  if (!el) return;
+  shortlistJobById.clear();
   if (!jobs?.length) {
     el.innerHTML = emptyCard("—");
     return;
   }
   el.innerHTML = jobs
     .map((j) => {
+      const snap = jobSnapshot(j);
+      if (snap) shortlistJobById.set(snap.id, snap);
       const score = j.match?.score ?? "—";
       const high = Number(score) >= 70;
       const src =
@@ -1465,18 +1484,9 @@ function renderShortlist(jobs) {
           : j.source === "dejob.ai"
             ? "DeJob"
             : j.source;
-      const jobPayload = escapeAttr(
-        JSON.stringify({
-          id: j.id,
-          title: j.title,
-          company: j.company,
-          source_url: j.source_url,
-          source: j.source,
-          match: j.match ? { score: j.match.score } : undefined,
-        })
-      );
+      const jid = escapeAttr(String(j.id || ""));
       return `
-      <article class="card">
+      <article class="card" data-job-id="${jid}">
         <div class="card-top">
           <div>
             <h3>${escapeHtml(j.title)} <span class="muted">@ ${escapeHtml(
@@ -1502,42 +1512,60 @@ function renderShortlist(jobs) {
               ? escapeHtml(j.match.gaps.join("；")) + "<br/>"
               : ""
           }
-          <a href="${escapeAttr(
-            j.source_url
-          )}" target="_blank" rel="noopener">${escapeHtml(t("btn_open"))}</a>
-          <button type="button" class="btn ghost sm btn-track" data-job='${jobPayload}'>${escapeHtml(
-            t("btn_track")
-          )}</button>
-          <button type="button" class="btn ghost sm btn-battle" data-job-id="${escapeAttr(
-            j.id
-          )}" data-job='${jobPayload}'>${escapeHtml(t("btn_battle"))}</button>
+          <div class="card-actions">
+            <a class="btn ghost sm" href="${escapeAttr(
+              j.source_url || "#"
+            )}" target="_blank" rel="noopener">${escapeHtml(t("btn_open"))}</a>
+            <button type="button" class="btn ghost sm btn-track" data-action="track" data-job-id="${jid}">${escapeHtml(
+              t("btn_track")
+            )}</button>
+            <button type="button" class="btn ghost sm btn-battle" data-action="battle" data-job-id="${jid}">${escapeHtml(
+              t("btn_battle")
+            )}</button>
+          </div>
         </div>
       </article>`;
     })
     .join("");
 
-  el.querySelectorAll(".btn-track").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      e.preventDefault();
+  bindShortlistActions();
+}
+
+let shortlistActionsBound = false;
+function bindShortlistActions() {
+  const el = $("#shortlist");
+  if (!el || shortlistActionsBound) return;
+  shortlistActionsBound = true;
+  el.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-action]");
+    if (!btn || !el.contains(btn)) return;
+    const action = btn.getAttribute("data-action");
+    const id = btn.getAttribute("data-job-id") || "";
+    const job = shortlistJobById.get(id);
+    if (!job) {
+      toast(lang === "zh" ? "岗位数据已失效，请刷新计划页" : "Job data stale — refresh Plan", true);
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    if (action === "track") {
+      btn.disabled = true;
       try {
-        const job = JSON.parse(btn.getAttribute("data-job") || "{}");
         const r = await api("/api/applications", {
           method: "POST",
           body: JSON.stringify({ job }),
         });
         toast(r.created ? t("toast_tracked") : t("toast_already"));
         btn.textContent = t("btn_tracked");
-        btn.disabled = true;
       } catch (err) {
-        toast(err.message, true);
+        btn.disabled = false;
+        toast(err.message || String(err), true);
       }
-    });
-  });
-  el.querySelectorAll(".btn-battle").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      e.preventDefault();
+      return;
+    }
+    if (action === "battle") {
+      btn.disabled = true;
       try {
-        const job = JSON.parse(btn.getAttribute("data-job") || "{}");
         const r = await api("/api/battle-pack", {
           method: "POST",
           body: JSON.stringify({
@@ -1546,11 +1574,17 @@ function renderShortlist(jobs) {
             lang,
           }),
         });
+        if (!r?.pack) {
+          toast(lang === "zh" ? "作战包生成失败" : "Battle pack failed", true);
+          return;
+        }
         showBattlePack(r.pack);
       } catch (err) {
-        toast(err.message, true);
+        toast(err.message || String(err), true);
+      } finally {
+        btn.disabled = false;
       }
-    });
+    }
   });
 }
 
@@ -1636,10 +1670,19 @@ let trackerCache = null;
 
 function showBattlePack(pack) {
   const modal = $("#battlePackModal");
-  if (!modal || !pack) return;
+  if (!pack) {
+    toast(lang === "zh" ? "作战包为空" : "Empty battle pack", true);
+    return;
+  }
+  if (!modal) {
+    toast(lang === "zh" ? "作战包弹层未找到" : "Battle pack modal missing", true);
+    return;
+  }
   modal.hidden = false;
+  modal.removeAttribute("hidden");
   modal.classList.remove("hidden");
-  $("#bpTitle").textContent = `${pack.title} @ ${pack.company}`;
+  document.body.classList.add("bp-open");
+  $("#bpTitle").textContent = `${pack.title || ""} @ ${pack.company || ""}`;
   const opening = lang === "en" ? pack.opening_en : pack.opening_zh;
   $("#bpBody").innerHTML = `
     <h4>${escapeHtml(t("bp_why"))}</h4>
@@ -1708,7 +1751,9 @@ function hideBattlePack() {
   const modal = $("#battlePackModal");
   if (!modal) return;
   modal.hidden = true;
+  modal.setAttribute("hidden", "");
   modal.classList.add("hidden");
+  document.body.classList.remove("bp-open");
 }
 
 async function loadOutreach() {

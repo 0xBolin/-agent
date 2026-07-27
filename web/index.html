@@ -281,18 +281,6 @@
         <h2 class="section-title">投递入口</h2>
         <div id="pathApply" class="card-list"></div>
       </section>
-
-      <!-- Phase 2：作战包弹层 -->
-      <div id="battlePackModal" class="bp-modal hidden" hidden>
-        <div class="bp-backdrop" id="bpBackdrop"></div>
-        <div class="bp-sheet">
-          <div class="bp-head">
-            <h3 id="bpTitle">作战包</h3>
-            <button type="button" class="btn ghost sm" id="bpClose">×</button>
-          </div>
-          <div id="bpBody" class="bp-body"></div>
-        </div>
-      </div>
     </main>
 
     <!-- TRACKER：申请追踪 + 触达 -->
@@ -343,6 +331,18 @@
         <button class="btn ghost" id="btnEditSetup" data-i18n="btn_edit_setup">去设置修改</button>
       </div>
     </main>
+
+    <!-- 作战包弹层：放在 view 外，避免被 .view.hidden 或层叠上下文挡住 -->
+    <div id="battlePackModal" class="bp-modal hidden" hidden>
+      <div class="bp-backdrop" id="bpBackdrop"></div>
+      <div class="bp-sheet" role="dialog" aria-modal="true" aria-labelledby="bpTitle">
+        <div class="bp-head">
+          <h3 id="bpTitle">作战包</h3>
+          <button type="button" class="btn ghost sm" id="bpClose" aria-label="Close">×</button>
+        </div>
+        <div id="bpBody" class="bp-body"></div>
+      </div>
+    </div>
 
     <footer class="footer">
       <span data-i18n="footer_main">职块 · 完整路径 · 不自动投递</span>
