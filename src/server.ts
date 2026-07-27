@@ -1242,6 +1242,8 @@ async function handleRequest(
 
 // —— Express 外壳：x402 付费路径 + 其余走原 handleRequest ——
 const app = express();
+// Render / Cloudflare 反代后正确识别 https，避免 x402 resource.url 落成 http://
+app.set("trust proxy", 1);
 app.use(express.json({ limit: "12mb" }));
 app.use(
   (
