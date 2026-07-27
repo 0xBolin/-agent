@@ -153,6 +153,17 @@ function send(
 }
 
 async function readBody(req: http.IncomingMessage): Promise<string> {
+  // Express 的 express.json() 已消费流并挂到 req.body；再读流会得到空串
+  const withBody = req as http.IncomingMessage & { body?: unknown };
+  if (withBody.body !== undefined && withBody.body !== null) {
+    if (typeof withBody.body === "string") return withBody.body;
+    if (Buffer.isBuffer(withBody.body)) return withBody.body.toString("utf8");
+    try {
+      return JSON.stringify(withBody.body);
+    } catch {
+      return "";
+    }
+  }
   const chunks: Buffer[] = [];
   for await (const c of req) chunks.push(c as Buffer);
   return Buffer.concat(chunks).toString("utf8");
