@@ -198,19 +198,100 @@ function withUserContext<T>(
   return dataContext.run({ userDataDir: dir }, () => Promise.resolve(fn()));
 }
 
+const EVM_ADDR_RE = /^0x[a-fA-F0-9]{40}$/;
+
+function decodePaymentHeaderJson(header: string): unknown | null {
+  const raw = header.trim();
+  if (!raw) return null;
+  if (raw.startsWith("{")) {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  for (const normalize of [
+    (s: string) => s,
+    (s: string) => s.replace(/-/g, "+").replace(/_/g, "/"),
+  ]) {
+    try {
+      const b64 = normalize(raw);
+      const pad = b64.length % 4 === 0 ? b64 : b64 + "=".repeat(4 - (b64.length % 4));
+      return JSON.parse(Buffer.from(pad, "base64").toString("utf8"));
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
+/** 在支付 payload 树中找 EIP-3009 / Permit2 的 from */
+function findPayerInTree(node: unknown, depth = 0): string {
+  if (depth > 8 || node == null) return "";
+  if (typeof node === "string" && EVM_ADDR_RE.test(node)) return "";
+  if (typeof node !== "object") return "";
+  const obj = node as Record<string, unknown>;
+  for (const key of ["from", "payer", "sender", "owner"]) {
+    const v = obj[key];
+    if (typeof v === "string" && EVM_ADDR_RE.test(v)) return v;
+  }
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === "object") {
+      const found = findPayerInTree(v, depth + 1);
+      if (found) return found;
+    }
+  }
+  return "";
+}
+
+/**
+ * 从已验签的 x402 支付头中提取付款人地址。
+ * 中间件已通过校验时调用，避免 GET 无 body 时只回 paid、不发 portalUrl。
+ */
+function payerFromPaymentHeader(header?: string): string {
+  if (!header || typeof header !== "string") return "";
+  try {
+    const payload = decodePaymentHeaderJson(header);
+    if (!payload) return "";
+    const nested = payload as {
+      payload?: {
+        authorization?: { from?: string };
+        permit2Authorization?: { from?: string };
+      };
+      authorization?: { from?: string };
+    };
+    const direct =
+      nested?.payload?.authorization?.from ||
+      nested?.payload?.permit2Authorization?.from ||
+      nested?.authorization?.from ||
+      "";
+    if (typeof direct === "string" && EVM_ADDR_RE.test(direct)) return direct;
+    return findPayerInTree(payload);
+  } catch {
+    return "";
+  }
+}
+
 /** 付费通过后的交付：开通专属 portalUrl */
 async function deliverPaidUnlock(
   body: Record<string, unknown>,
-  queryAddress?: string
+  queryAddress?: string,
+  paymentHeader?: string
 ): Promise<Record<string, unknown>> {
-  const address = String(body.address || queryAddress || "");
+  const address = String(
+    body.address ||
+      queryAddress ||
+      payerFromPaymentHeader(paymentHeader) ||
+      ""
+  );
   if (!address) {
+    // 已扣款但无法绑定权益：返回明确错误，避免买家以为开通成功
     return {
-      ok: true,
-      product: "job-block",
+      ok: false,
+      error: "missing_payer_address",
       paid: true,
       message:
-        "Payment accepted. POST JSON { \"address\": \"0x…\" } to /api/access/unlock to receive portalUrl.",
+        "Payment verified but payer address could not be resolved. Contact seller with txHash, or retry POST with { \"address\": \"0x…\" }.",
       resource: `${publicBaseUrl()}/api/access/unlock`,
       price: x402Price(),
       payTo: payToAddress(),
@@ -1218,9 +1299,14 @@ if (isX402SdkConfigured()) {
           return;
         }
 
+        const payHdr =
+          (req.headers["payment-signature"] as string) ||
+          (req.headers["x-payment"] as string) ||
+          "";
         const out = await deliverPaidUnlock(
           body,
-          typeof req.query.address === "string" ? req.query.address : undefined
+          typeof req.query.address === "string" ? req.query.address : undefined,
+          payHdr
         );
         if (out.ok === false) {
           res.status(400).json(out);

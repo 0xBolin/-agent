@@ -54,11 +54,19 @@ export function isX402SdkConfigured(): boolean {
 }
 
 export function publicBaseUrl(): string {
-  return (
+  let base = (
     process.env.JOB_BLOCK_PUBLIC_URL ||
     process.env.RENDER_EXTERNAL_URL ||
     "http://127.0.0.1:8787"
   ).replace(/\/$/, "");
+  // Render / 公网资源必须 https，避免 PAYMENT-REQUIRED.resource.url 落成 http://
+  if (
+    /^http:\/\//i.test(base) &&
+    !/localhost|127\.0\.0\.1/i.test(base)
+  ) {
+    base = base.replace(/^http:\/\//i, "https://");
+  }
+  return base;
 }
 
 /**
