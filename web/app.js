@@ -1899,13 +1899,35 @@ async function loadOutreach() {
           <label>${escapeHtml(t("tracker_follow"))}
             <input type="date" class="or-follow" value="${escapeAttr(follow)}" />
           </label>
-          <button type="button" class="btn primary sm or-save">${escapeHtml(t("tracker_save"))}</button>
+          <div class="tracker-actions">
+            ${
+              c.linkedin_url
+                ? `<a class="btn ghost sm" href="${escapeAttr(
+                    c.linkedin_url
+                  )}" target="_blank" rel="noopener">LinkedIn</a>`
+                : ""
+            }
+            ${
+              c.x_url
+                ? `<a class="btn ghost sm" href="${escapeAttr(
+                    c.x_url
+                  )}" target="_blank" rel="noopener">X</a>`
+                : ""
+            }
+            <button type="button" class="btn primary sm or-save">${escapeHtml(
+              t("tracker_save")
+            )}</button>
+          </div>
         </div>
       </article>`;
       })
       .join("");
     list.querySelectorAll(".tracker-card").forEach((card) => {
-      card.querySelector(".or-save").addEventListener("click", async () => {
+      const saveBtn = card.querySelector(".or-save");
+      if (!saveBtn) return;
+      saveBtn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         try {
           await api("/api/outreach/" + encodeURIComponent(card.dataset.id), {
             method: "PATCH",
@@ -1917,8 +1939,8 @@ async function loadOutreach() {
           });
           toast(t("toast_task"));
           loadOutreach();
-        } catch (e) {
-          toast(e.message, true);
+        } catch (err) {
+          toast(err.message, true);
         }
       });
     });
@@ -2068,9 +2090,11 @@ function renderTrackerUI(r) {
           <label>${escapeHtml(t("tracker_follow"))}
             <input type="date" class="trk-follow" value="${escapeAttr(follow)}" />
           </label>
-          <button type="button" class="btn primary sm trk-save">${escapeHtml(
-            t("tracker_save")
-          )}</button>
+          <div class="tracker-actions">
+            <button type="button" class="btn primary sm trk-save">${escapeHtml(
+              t("tracker_save")
+            )}</button>
+          </div>
         </div>
       </article>`;
     })
