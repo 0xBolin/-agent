@@ -156,6 +156,7 @@ function profileHasResume(address: string): boolean {
   try {
     return dataContext.run({ userDataDir: ensureUserData(address) }, () => {
       const p = getProfile();
+      if (!p) return false;
       return Boolean(p.resume_text && p.resume_text.trim().length > 40);
     });
   } catch {
