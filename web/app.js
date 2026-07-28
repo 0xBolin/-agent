@@ -2101,7 +2101,11 @@ function renderTrackerUI(r) {
     .join("");
 
   list.querySelectorAll(".tracker-card").forEach((card) => {
-    card.querySelector(".trk-save").addEventListener("click", async () => {
+    const saveBtn = card.querySelector(".trk-save");
+    if (!saveBtn) return;
+    saveBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       try {
         const status = card.querySelector(".trk-status").value;
         const next_follow_up_at =
