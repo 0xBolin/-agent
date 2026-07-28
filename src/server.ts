@@ -443,18 +443,29 @@ async function handleRequest(
     const url = new URL(req.url || "/", `http://${HOST}:${PORT}`);
     const p = url.pathname;
 
-    // x402 SDK 已接管这些路径时，避免落到 SPA
+    // x402 路径应由 Express paidDeliver 处理；若落入此处返回 402 而非 500
     if (
-      isX402SdkConfigured() &&
-      (p === "/api/access/unlock" ||
-        p === "/x402" ||
-        p === "/a2a" ||
-        p === "/task" ||
-        p === "/mcp")
+      p === "/api/access/unlock" ||
+      p === "/x402" ||
+      p === "/a2a" ||
+      p === "/task" ||
+      p === "/mcp"
     ) {
-      send(res, 500, {
-        error: "x402 route should be handled by Express middleware",
-      });
+      try {
+        const ch = buildX402Challenge(`${publicBaseUrl()}${p}`);
+        res.writeHead(ch.status, {
+          ...ch.headers,
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "application/json; charset=utf-8",
+        });
+        res.end(JSON.stringify(ch.body));
+      } catch {
+        send(res, 402, {
+          error: "payment_required",
+          message: "Payment required",
+          x402Version: 2,
+        });
+      }
       return;
     }
 
@@ -1443,7 +1454,31 @@ app.use(
   }
 );
 
-/** 付费交付 handler（x402 中间件校验通过后，或 dev 开通） */
+/** 无支付头时统一返回 402（绝不落入交付逻辑，避免 500） */
+function sendPaymentRequired(req: express.Request, res: express.Response): void {
+  const resource = `${publicBaseUrl()}${req.path || "/x402"}`;
+  try {
+    const ch = buildX402Challenge(resource);
+    // 覆盖 resource 为当前 path 的公网 URL
+    const hdrs: Record<string, string> = { ...ch.headers };
+    res.status(402);
+    for (const [k, v] of Object.entries(hdrs)) {
+      res.setHeader(k, v);
+    }
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.json(ch.body);
+  } catch (e) {
+    console.error("[x402] build challenge failed:", e);
+    res.status(402).json({
+      error: "payment_required",
+      message: "Payment required",
+      x402Version: 2,
+      resource,
+    });
+  }
+}
+
+/** 付费交付 handler（仅在已有支付凭证时开通；无凭证必须 402） */
 const paidDeliver = async (req: express.Request, res: express.Response) => {
   try {
     const body = (req.body || {}) as Record<string, unknown>;
@@ -1468,23 +1503,15 @@ const paidDeliver = async (req: express.Request, res: express.Response) => {
       return;
     }
 
-    const payHdr =
+    const payHdr = String(
       (req.headers["payment-signature"] as string) ||
-      (req.headers["x-payment"] as string) ||
-      "";
-    // 未接 SDK / 中间件未就绪时：仍返回合规 402 挑战
-    if (!payHdr && isX402SdkConfigured() && !x402MwReady) {
-      res.status(503).json({
-        error: "payment_middleware_starting",
-        message: "支付组件启动中，请稍后重试",
-      });
-      return;
-    }
-    if (!payHdr && !isX402SdkConfigured()) {
-      const ch = buildX402Challenge(
-        `${publicBaseUrl()}${req.path || "/x402"}`
-      );
-      res.status(ch.status).set(ch.headers).json(ch.body);
+        (req.headers["x-payment"] as string) ||
+        ""
+    ).trim();
+
+    // 无支付凭证：始终 402（中间件未拦截时的兜底）
+    if (!payHdr) {
+      sendPaymentRequired(req, res);
       return;
     }
 
@@ -1500,7 +1527,14 @@ const paidDeliver = async (req: express.Request, res: express.Response) => {
     res.status(200).json(out);
   } catch (e) {
     console.error("[x402 deliver]", e);
-    res.status(500).json({ error: (e as Error).message });
+    // 交付异常时仍尽量给 402，避免审核看到 500
+    if (!res.headersSent) {
+      try {
+        sendPaymentRequired(req, res);
+      } catch {
+        res.status(500).json({ error: (e as Error).message });
+      }
+    }
   }
 };
 
@@ -1515,11 +1549,46 @@ let x402Mw:
 let x402MwReady = false;
 
 app.use((req, res, next) => {
-  if (x402Mw) {
-    x402Mw(req, res, next);
+  if (!x402Mw) {
+    next();
     return;
   }
-  next();
+  try {
+    x402Mw(req, res, (err?: unknown) => {
+      if (err) {
+        console.error("[x402 mw]", err);
+        // 中间件失败：对受保护路径回退 402，其它 next
+        const p = req.path || "";
+        if (
+          p === "/x402" ||
+          p === "/a2a" ||
+          p === "/task" ||
+          p === "/mcp" ||
+          p === "/api/access/unlock"
+        ) {
+          if (!res.headersSent) sendPaymentRequired(req, res);
+          return;
+        }
+        next(err);
+        return;
+      }
+      next();
+    });
+  } catch (e) {
+    console.error("[x402 mw throw]", e);
+    const p = req.path || "";
+    if (
+      p === "/x402" ||
+      p === "/a2a" ||
+      p === "/task" ||
+      p === "/mcp" ||
+      p === "/api/access/unlock"
+    ) {
+      if (!res.headersSent) sendPaymentRequired(req, res);
+      return;
+    }
+    next(e as Error);
+  }
 });
 
 for (const method of ["get", "post"] as const) {
