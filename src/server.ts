@@ -125,10 +125,64 @@ const MIME: Record<string, string> = {
 // 防止并发多次 auto pipeline
 const runningPipelines = new Set<string>();
 
+/** x402 中间件状态（listen 后异步 initialize Facilitator） */
+let x402Mw:
+  | ((
+      req: express.Request,
+      res: express.Response,
+      next: express.NextFunction
+    ) => void)
+  | null = null;
+let x402MwReady = false;
+let x402InitError: string | null = null;
+
 function normalizeAddr(a?: string): string | null {
   if (!a) return null;
   const s = a.trim().toLowerCase();
   return /^0x[a-f0-9]{40}$/.test(s) ? s : null;
+}
+
+function pendingResumePath(address: string): string {
+  return path.join(
+    baseDataDir(),
+    ".cache",
+    "resume-pending",
+    `${address}.json`
+  );
+}
+
+/** 画像里是否已有可用简历文本 */
+function profileHasResume(address: string): boolean {
+  try {
+    return dataContext.run({ userDataDir: ensureUserData(address) }, () => {
+      const p = getProfile();
+      return Boolean(p.resume_text && p.resume_text.trim().length > 40);
+    });
+  } catch {
+    return false;
+  }
+}
+
+/** 软提醒文案：生成链接前建议交简历，不强制、不拦截开通 */
+function resumeSoftReminder(): string {
+  return (
+    "【提醒 · 建议先交简历】生成专属链接前，建议先提醒用户提交简历 PDF 做初步识别（POST /api/agent/resume-parse）。" +
+    "简历只能在 Agent 侧提交，职块网页不上传 PDF。用户也可以稍后在专属页再完善；未交简历不影响开通与打开专属链接。"
+  );
+}
+
+function portalInstruction(resume_prefilled: boolean): string {
+  const base =
+    "请把 portalUrl 完整展示给用户，并明确要求用户自行点击打开。不要代为打开浏览器。";
+  if (resume_prefilled) {
+    return base + " 简历已预填，用户打开后可在 Setup 中确认。";
+  }
+  return (
+    base +
+    " " +
+    resumeSoftReminder() +
+    " 可先把链接发给用户打开；有 PDF 时再 parse 预填效果更好。"
+  );
 }
 
 function send(
@@ -392,12 +446,7 @@ async function deliverPaidUnlock(
         if (b64) {
           parsed = await parseResumePdf(Buffer.from(b64, "base64"));
         } else {
-          const pending = path.join(
-            baseDataDir(),
-            ".cache",
-            "resume-pending",
-            `${r.address}.json`
-          );
+          const pending = pendingResumePath(r.address);
           if (fs.existsSync(pending)) {
             parsed = JSON.parse(fs.readFileSync(pending, "utf8"));
             try {
@@ -411,6 +460,8 @@ async function deliverPaidUnlock(
           saveParsedResumeToProfile(parsed);
           resume_prefilled = true;
           resume_summary = formatParseSummaryForAgent(parsed);
+        } else if (profileHasResume(r.address)) {
+          resume_prefilled = true;
         }
       }
     );
@@ -426,11 +477,8 @@ async function deliverPaidUnlock(
     address: r.address,
     resume_prefilled,
     resume_summary,
-    instruction:
-      "请把 portalUrl 完整展示给用户，并明确要求用户自行点击打开。不要代为打开浏览器。" +
-      (resume_prefilled
-        ? " 简历已预填，用户打开后可在 Setup 中确认。"
-        : ""),
+    instruction: portalInstruction(resume_prefilled),
+    ...(resume_prefilled ? {} : { resume_reminder: resumeSoftReminder() }),
   };
 }
 
@@ -563,17 +611,9 @@ async function handleRequest(
           );
         } else if (address) {
           // 未开通：解析结果暂存，unlock 时写入
-          const cacheDir = path.join(
-            baseDataDir(),
-            ".cache",
-            "resume-pending"
-          );
-          fs.mkdirSync(cacheDir, { recursive: true });
-          fs.writeFileSync(
-            path.join(cacheDir, `${address}.json`),
-            JSON.stringify(parsed),
-            "utf8"
-          );
+          const pending = pendingResumePath(address);
+          fs.mkdirSync(path.dirname(pending), { recursive: true });
+          fs.writeFileSync(pending, JSON.stringify(parsed), "utf8");
         }
         send(res, 200, {
           ok: true,
@@ -581,10 +621,15 @@ async function handleRequest(
           summary_text: formatParseSummaryForAgent(parsed),
           saved_to_profile: saved,
           note: saved
-            ? "已写入该钱包用户画像，打开专属页即可看到预填"
+            ? "已写入该钱包用户画像，打开专属页即可看到预填。可继续引导用户付费并 unlock 生成专属链接。"
             : address
-              ? "已缓存解析结果；开通专属链接时将自动写入画像"
-              : "仅返回解析结果；开通时请在 unlock 中带上同一 pdfBase64 或先带 address 再 parse",
+              ? "已缓存解析结果。建议向用户展示 summary_text 后付费/unlock；开通时将自动写入画像。未 parse 也可直接 unlock。"
+              : "仅返回解析结果；建议带 address 再 parse 以便缓存，或开通时在 unlock 中带上同一 pdfBase64。简历为建议项，不强制。",
+          next_step: saved
+            ? "unlock_or_open_portal"
+            : address
+              ? "confirm_resume_then_unlock"
+              : "resume_parse_with_address",
         });
       } catch (e) {
         send(res, 400, { error: (e as Error).message });
@@ -592,7 +637,7 @@ async function handleRequest(
       return;
     }
 
-    // 先付费（或 dev）→ 只返回 portalUrl；可选附带 PDF 预填
+    // 付费（或 dev）→ 返回 portalUrl；可选附带 PDF 预填（简历建议但不强制）
     // 若已启用 x402 SDK，此路径由 Express + paymentMiddleware 处理
     if (
       p === "/api/access/unlock" &&
@@ -613,13 +658,18 @@ async function handleRequest(
             ? `${process.env.JOB_BLOCK_PUBLIC_URL}/api/access/unlock`
             : `http://${HOST}:${PORT}/api/access/unlock`
         );
+        // 402 响应里附带软提醒（不拦截后续付费开通）
+        const body402 = {
+          ...ch.body,
+          resume_reminder: resumeSoftReminder(),
+        };
         res.writeHead(ch.status, {
           ...ch.headers,
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Headers":
             "Content-Type, Authorization, X-PAYMENT, PAYMENT-SIGNATURE",
         });
-        res.end(JSON.stringify(ch.body));
+        res.end(JSON.stringify(body402));
         return;
       }
 
@@ -663,12 +713,7 @@ async function handleRequest(
             if (b64) {
               parsed = await parseResumePdf(Buffer.from(b64, "base64"));
             } else {
-              const pending = path.join(
-                baseDataDir(),
-                ".cache",
-                "resume-pending",
-                `${r.address}.json`
-              );
+              const pending = pendingResumePath(r.address);
               if (fs.existsSync(pending)) {
                 parsed = JSON.parse(fs.readFileSync(pending, "utf8"));
                 try {
@@ -682,6 +727,8 @@ async function handleRequest(
               saveParsedResumeToProfile(parsed);
               resume_prefilled = true;
               resume_summary = formatParseSummaryForAgent(parsed);
+            } else if (profileHasResume(r.address)) {
+              resume_prefilled = true;
             }
           }
         );
@@ -697,11 +744,8 @@ async function handleRequest(
         address: r.address,
         resume_prefilled,
         resume_summary,
-        instruction:
-          "请把 portalUrl 完整展示给用户，并明确要求用户自行点击打开。不要代为打开浏览器。" +
-          (resume_prefilled
-            ? " 简历已预填，用户打开后可在 Setup 中确认。"
-            : ""),
+        instruction: portalInstruction(resume_prefilled),
+        ...(resume_prefilled ? {} : { resume_reminder: resumeSoftReminder() }),
       });
       return;
     }
@@ -764,6 +808,8 @@ async function handleRequest(
           dataDir: dataDir(),
           build: BUILD_ID,
           x402: isX402SdkConfigured(),
+          x402_ready: x402MwReady,
+          x402_init_error: x402InitError,
           auth: "portal_only",
           entry: "OKX.AI Agent → Agentic Wallet 登录 → 付费/dev 开通 → 用户点击 /p/{slug}",
           user: session
@@ -1466,7 +1512,8 @@ function sendPaymentRequired(req: express.Request, res: express.Response): void 
       res.setHeader(k, v);
     }
     res.setHeader("Content-Type", "application/json; charset=utf-8");
-    res.json(ch.body);
+    // 软提醒：建议先交简历，不拦截付费/开通
+    res.json({ ...ch.body, resume_reminder: resumeSoftReminder() });
   } catch (e) {
     console.error("[x402] build challenge failed:", e);
     res.status(402).json({
@@ -1474,80 +1521,117 @@ function sendPaymentRequired(req: express.Request, res: express.Response): void 
       message: "Payment required",
       x402Version: 2,
       resource,
+      resume_reminder: resumeSoftReminder(),
     });
   }
+}
+
+function isX402ProtectedPath(p: string): boolean {
+  return (
+    p === "/x402" ||
+    p === "/a2a" ||
+    p === "/task" ||
+    p === "/mcp" ||
+    p === "/api/access/unlock"
+  );
+}
+
+function readPaymentHeader(
+  req: express.Request,
+  body?: Record<string, unknown>
+): string {
+  const fromHdr = String(
+    (req.headers["payment-signature"] as string) ||
+      (req.headers["x-payment"] as string) ||
+      ""
+  ).trim();
+  if (fromHdr) return fromHdr;
+  if (!body) return "";
+  return String(body.paymentHeader || body.paymentProof || "").trim();
 }
 
 /** 付费交付 handler（仅在已有支付凭证时开通；无凭证必须 402） */
 const paidDeliver = async (req: express.Request, res: express.Response) => {
   try {
     const body = (req.body || {}) as Record<string, unknown>;
+    const addressHint = String(
+      body.address ||
+        (typeof req.query.address === "string" ? req.query.address : "") ||
+        ""
+    );
+
     if (body.dev === true && allowDevUnlock()) {
-      const r = processUnlock({
-        address: String(body.address || ""),
-        dev: true,
-      });
-      if (!r.ok) {
-        res.status(400).json({ error: r.error });
+      // 与 dev-unlock 一致：占位支付头走统一交付（合并简历缓存 + 软提醒 instruction）
+      const out = await deliverPaidUnlock(
+        body,
+        addressHint,
+        "dev-unlock-verified"
+      );
+      if (out.ok === false) {
+        // 注意：x402 中间件仅在 statusCode < 400 时 settle；业务错误用 200 包装会误扣款
+        // 此处为 dev 路径，无 settle 风险
+        res.status(400).json(out);
         return;
       }
-      res.status(200).json({
-        ok: true,
-        message: r.message,
-        portalUrl: r.portalUrl,
-        portal_slug: r.portal_slug,
-        address: r.address,
-        instruction:
-          "请把 portalUrl 完整展示给用户，并明确要求用户自行点击打开。",
+      res.status(200).json(out);
+      return;
+    }
+
+    const payHdr = readPaymentHeader(req, body);
+
+    // SDK 已配置但 Facilitator 尚未 ready：带支付头时不要占位开通（否则无链上核销）
+    if (isX402SdkConfigured() && !x402MwReady && payHdr) {
+      res.status(503).json({
+        error: "x402_not_ready",
+        message:
+          "Payment facilitator is still initializing. Please retry unlock in a few seconds.",
       });
       return;
     }
 
-    const payHdr = String(
-      (req.headers["payment-signature"] as string) ||
-        (req.headers["x-payment"] as string) ||
-        ""
-    ).trim();
-
-    // 无支付凭证：始终 402（中间件未拦截时的兜底）
+    // 无支付凭证：始终 402（附带简历软提醒，不拦截后续开通）
     if (!payHdr) {
       sendPaymentRequired(req, res);
       return;
     }
 
+    // 中间件已验签通过才会 next 到这里；必须返回 2xx 才会 settle 上链
     const out = await deliverPaidUnlock(
       body,
       typeof req.query.address === "string" ? req.query.address : undefined,
       payHdr
     );
     if (out.ok === false) {
+      // status >= 400 时 x402 中间件会跳过 settle（不扣款）——业务失败时保持 400 正确
       res.status(400).json(out);
       return;
     }
     res.status(200).json(out);
   } catch (e) {
     console.error("[x402 deliver]", e);
-    // 交付异常时仍尽量给 402，避免审核看到 500
+    // 已有支付头时不要再伪装 402（否则 Agent 以为未付费、且中间件会跳过 settle）
     if (!res.headersSent) {
-      try {
-        sendPaymentRequired(req, res);
-      } catch {
-        res.status(500).json({ error: (e as Error).message });
+      const payHdr = readPaymentHeader(
+        req,
+        (req.body || {}) as Record<string, unknown>
+      );
+      if (payHdr) {
+        res.status(500).json({
+          error: "deliver_failed",
+          message: (e as Error).message,
+        });
+      } else {
+        try {
+          sendPaymentRequired(req, res);
+        } catch {
+          res.status(500).json({ error: (e as Error).message });
+        }
       }
     }
   }
 };
 
-/** 可热插拔的 x402 中间件（listen 后再初始化，避免卡死端口） */
-let x402Mw:
-  | ((
-      req: express.Request,
-      res: express.Response,
-      next: express.NextFunction
-    ) => void)
-  | null = null;
-let x402MwReady = false;
-
+/** 可热插拔的 x402 中间件（listen 后再 initialize Facilitator，避免卡死端口） */
 app.use((req, res, next) => {
   if (!x402Mw) {
     next();
@@ -1557,16 +1641,20 @@ app.use((req, res, next) => {
     x402Mw(req, res, (err?: unknown) => {
       if (err) {
         console.error("[x402 mw]", err);
-        // 中间件失败：对受保护路径回退 402，其它 next
         const p = req.path || "";
-        if (
-          p === "/x402" ||
-          p === "/a2a" ||
-          p === "/task" ||
-          p === "/mcp" ||
-          p === "/api/access/unlock"
-        ) {
-          if (!res.headersSent) sendPaymentRequired(req, res);
+        if (isX402ProtectedPath(p)) {
+          if (res.headersSent) return;
+          const hasPay = Boolean(readPaymentHeader(req));
+          // 带支付凭证时：暴露真实错误，勿再回 402（Agent 会误判为未付费）
+          if (hasPay) {
+            res.status(502).json({
+              error: "payment_verify_failed",
+              message: err instanceof Error ? err.message : String(err),
+              hint: "Facilitator verify/settle failed. Check OKX API keys and x402 initialize logs.",
+            });
+            return;
+          }
+          sendPaymentRequired(req, res);
           return;
         }
         next(err);
@@ -1577,14 +1665,17 @@ app.use((req, res, next) => {
   } catch (e) {
     console.error("[x402 mw throw]", e);
     const p = req.path || "";
-    if (
-      p === "/x402" ||
-      p === "/a2a" ||
-      p === "/task" ||
-      p === "/mcp" ||
-      p === "/api/access/unlock"
-    ) {
-      if (!res.headersSent) sendPaymentRequired(req, res);
+    if (isX402ProtectedPath(p)) {
+      if (res.headersSent) return;
+      const hasPay = Boolean(readPaymentHeader(req));
+      if (hasPay) {
+        res.status(502).json({
+          error: "payment_verify_failed",
+          message: e instanceof Error ? e.message : String(e),
+        });
+        return;
+      }
+      sendPaymentRequired(req, res);
       return;
     }
     next(e as Error);
@@ -1606,19 +1697,33 @@ function attachX402AfterListen(): void {
     );
     return;
   }
-  try {
-    const { middleware, payTo, price } = createX402PaymentMiddleware();
-    x402Mw = middleware as typeof x402Mw;
-    x402MwReady = true;
-    console.log(
-      `  💳 x402 SDK 已启用  payTo=${payTo}  price=${price}  network=eip155:196`
-    );
-    console.log(
-      `  💳 付费资源 → ${publicBaseUrl()}/api/access/unlock  （及 /x402 /a2a /task /mcp）`
-    );
-  } catch (e) {
-    console.error("[x402] 初始化失败，回退旧版 402 占位:", (e as Error).message);
-  }
+  void (async () => {
+    try {
+      const bundle = createX402PaymentMiddleware();
+      console.log(
+        `  💳 x402 正在同步 Facilitator… payTo=${bundle.payTo} price=${bundle.price} network=${bundle.network}`
+      );
+      // 关键：未 initialize 时 verify 会抛错，客户端表现为签名后仍 402、无 txHash
+      await bundle.initialize();
+      x402Mw = bundle.middleware as typeof x402Mw;
+      x402MwReady = true;
+      x402InitError = null;
+      console.log(
+        `  💳 x402 SDK ready  payTo=${bundle.payTo}  price=${bundle.price}  network=${bundle.network}`
+      );
+      console.log(
+        `  💳 付费资源 → ${publicBaseUrl()}/api/access/unlock  （及 /x402 /a2a /task /mcp）`
+      );
+    } catch (e) {
+      x402Mw = null;
+      x402MwReady = false;
+      x402InitError = e instanceof Error ? e.message : String(e);
+      console.error(
+        "[x402] Facilitator initialize 失败，暂不挂载中间件:",
+        x402InitError
+      );
+    }
+  })();
 }
 
 /**
@@ -1640,8 +1745,8 @@ app.post("/api/access/dev-unlock", async (req, res) => {
       res.status(400).json({ error: "address_required" });
       return;
     }
-    // 走统一交付：签发 portal + 合并 resume-pending 缓存
-    const out = await deliverPaidUnlock(body, address);
+    // 走统一交付：签发 portal + 合并 resume-pending 缓存（无简历也可开通，仅软提醒）
+    const out = await deliverPaidUnlock(body, address, "dev-unlock-verified");
     if (out.ok === false) {
       res.status(400).json(out);
       return;

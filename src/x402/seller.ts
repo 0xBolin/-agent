@@ -1,10 +1,14 @@
 /**
  * OKX x402 卖家配置（HTTP 付费资源）
  * 文档：@okxweb3/x402-express + Facilitator
+ *
+ * 关键：必须在 listen 之后调用 initialize()，拉取 Facilitator 支持的 scheme/network。
+ * 未 initialize 时 verify/settle 会失败，客户端表现为「已签名仍持续 402、无 txHash」。
  */
 import {
-  paymentMiddleware,
+  paymentMiddlewareFromHTTPServer,
   x402ResourceServer,
+  x402HTTPResourceServer,
 } from "@okxweb3/x402-express";
 import { ExactEvmScheme } from "@okxweb3/x402-evm/exact/server";
 import { OKXFacilitatorClient } from "@okxweb3/x402-core";
@@ -103,7 +107,23 @@ export function x402RouteConfig() {
   };
 }
 
-export function createX402PaymentMiddleware() {
+export type X402MiddlewareBundle = {
+  middleware: (
+    req: import("express").Request,
+    res: import("express").Response,
+    next: import("express").NextFunction
+  ) => Promise<void>;
+  /** 拉取 Facilitator supported kinds；必须在挂载前或挂载后立刻 await */
+  initialize: () => Promise<void>;
+  routes: ReturnType<typeof x402RouteConfig>;
+  resourceServer: InstanceType<typeof x402ResourceServer>;
+  httpServer: InstanceType<typeof x402HTTPResourceServer>;
+  payTo: string;
+  price: `$${string}`;
+  network: X402Network;
+};
+
+export function createX402PaymentMiddleware(): X402MiddlewareBundle {
   if (!isX402SdkConfigured()) {
     throw new Error(
       "x402 未配置：需要 PAY_TO_ADDRESS + OKX_API_KEY + OKX_SECRET_KEY + OKX_PASSPHRASE"
@@ -120,10 +140,12 @@ export function createX402PaymentMiddleware() {
   resourceServer.register(x402Network(), new ExactEvmScheme());
 
   const routes = x402RouteConfig();
-  // 第 5 参 false：启动时不阻塞同步 Facilitator（避免本机/冷启动卡住不 listen）
-  const middleware = paymentMiddleware(
-    routes,
-    resourceServer,
+  const httpServer = new x402HTTPResourceServer(resourceServer, routes);
+
+  // syncFacilitatorOnStart=false：不在构造时阻塞；由调用方 await initialize()
+  // （listen 之后再 init，既不挡端口，又能真正拉取 Facilitator）
+  const middleware = paymentMiddlewareFromHTTPServer(
+    httpServer,
     undefined,
     undefined,
     false
@@ -131,9 +153,14 @@ export function createX402PaymentMiddleware() {
 
   return {
     middleware,
+    initialize: async () => {
+      await httpServer.initialize();
+    },
     routes,
     resourceServer,
+    httpServer,
     payTo: payToAddress(),
     price: x402Price(),
+    network: x402Network(),
   };
 }

@@ -375,7 +375,9 @@ export function buildX402Challenge(resource: string): {
       x402Version: 2,
       accepts: challenge.accepts,
       next:
-        "Agent 应：1) 引导用户完成支付 2) 携带支付凭证重试 unlock 3) 只把 portalUrl 发给用户点击",
+        "Agent 应：1) 建议先提醒用户提交简历 PDF（可选，POST /api/agent/resume-parse）2) 引导用户完成支付 3) 携带支付凭证重试 unlock 4) 只把 portalUrl 发给用户点击",
+      resume_reminder:
+        "生成专属链接前建议提醒用户提交简历，便于预填；用户跳过也可以，仍可开通并打开专属页。",
     },
   };
 }

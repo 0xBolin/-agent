@@ -14,7 +14,7 @@
 
 ## 原则
 1. Agentic Wallet 登录只在本会话进行；不要让用户在职块网页注册邮箱或网页钱包登录。
-2. 生成专属链接之前，先让用户提交简历 PDF，做初步识别与分析，并缓存/预填画像字段。
+2. **生成专属链接之前，先提醒用户提交简历 PDF**（建议，非强制）。用户可以跳过；跳过仍可付费/开通并返回 portalUrl。
 3. 必须先付费（生产）或 dev 开通，再生成 /p/{slug}。
 4. 所有 URL 只完整展示，要求用户自行点击；禁止代开浏览器。
 5. 不编造登录/付款/解析结果。
@@ -36,15 +36,14 @@ BASE = {{JOB_BLOCK_PUBLIC_URL}}
 2. 未登录 → wallet login --phase init → 把 loginUrl 给用户自行点击 → poll
 3. 取 EVM 地址为 ADDRESS
 
-### Step 2 — 提交 PDF 初步识别（生成链接之前必做；网页不上传 PDF）
-1. 明确告知用户：简历只能在本 Agent 提交，职块网页不会上传 PDF。
-2. 请用户提供简历 PDF（文件路径或 base64）。
-3. 将 PDF 读为 base64 后请求：
-   POST {BASE}/api/agent/resume-parse
-   { "address": "ADDRESS", "pdfBase64": "..." }
-4. 把响应里的 summary_text 完整展示给用户（技能、关键词、经历摘录）。
-5. 询问：「识别结果是否基本正确？需要改的请现在说。」
-6. 扫描件失败：请用户换「文字版 PDF」或提供纯文本后，你仍尽量通过 resume-parse / unlock 的 pdfBase64 预填；网页侧只做确认微调。
+### Step 2 — 提醒并提交 PDF（建议；网页不上传 PDF）
+1. **先提醒用户**：「开通前建议先提交简历 PDF，匹配更准；也可以先开通再在网页里补。简历只能在本对话交给我解析，职块网页不上传 PDF。」
+2. 若用户提供简历 PDF（文件路径或 base64）：读为 base64 后请求  
+   POST {BASE}/api/agent/resume-parse  
+   { "address": "ADDRESS", "pdfBase64": "..." }  
+   把 summary_text 展示给用户并确认。
+3. 若用户表示跳过 / 暂时没有简历：直接进入 Step 3，不要阻断开通。
+4. 扫描件失败：请用户换「文字版 PDF」或纯文本；也可先开通链接。
 
 ### Step 3 — 先付费再生成专属链接
 1. POST unlock 不带支付 → 预期 402，引导用户完成 OKX.AI / x402 支付。
@@ -52,9 +51,9 @@ BASE = {{JOB_BLOCK_PUBLIC_URL}}
    POST {BASE}/api/access/unlock
    { "address": "ADDRESS", "dev": true }
    （若 Step2 已 parse 并带 address，缓存会在 unlock 时自动写入画像；也可再传 pdfBase64）
-3. 成功后响应含 portalUrl、resume_prefilled。
+3. 成功后响应含 portalUrl、resume_prefilled；未交简历时也会有 portalUrl，并带 resume_reminder 软提醒。
 4. 对用户只展示：
-   「开通成功。请自行点击下面链接打开职块（默认已登录；简历已预填请在 Setup 确认）。
+   「开通成功。请自行点击下面链接打开职块（默认已登录；若已交简历请在 Setup 确认预填）。
    {portalUrl}」
 5. 禁止自动打开 portalUrl。
 
@@ -66,6 +65,7 @@ BASE = {{JOB_BLOCK_PUBLIC_URL}}
 - 网页「连接钱包登录」引导
 - 未付费生成假链接
 - 代用户点击任何链接
+- 因用户未交简历而拒绝返回 portalUrl（只提醒，不强制）
 ```
 
 ---

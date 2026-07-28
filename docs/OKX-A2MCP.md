@@ -11,10 +11,13 @@
 OKX.AI 复制职块 Prompt
     → 在自己的 Agent 打开
     → Agentic Wallet 登录（Agent 只返回 loginUrl，用户自己点）
+    → 提醒用户可先提交简历 PDF（建议，可跳过）→ 可选 POST /api/agent/resume-parse
     → 先付费（x402）或 dev 开通
     → Agent 只返回 portalUrl（/p/slug），用户自己点
     → 专属页默认登录 → Setup / 求职路径
 ```
+
+未交简历**不拦截** unlock；响应里可带 `resume_reminder` 软提醒，Agent 应提示用户，但仍须返回 portalUrl。
 
 ## 明确不做
 
