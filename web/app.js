@@ -1757,6 +1757,9 @@ function renderWeekPlan(plan, progress) {
 /** 申请页筛选：all | overdue | status 名 */
 let trackerFilter = "all";
 let trackerCache = null;
+/** 触达页筛选：与申请页同一交互 */
+let outreachFilter = "all";
+let outreachCache = null;
 
 function showBattlePack(pack) {
   const modal = $("#battlePackModal");
@@ -1846,35 +1849,89 @@ function hideBattlePack() {
   document.body.classList.remove("bp-open");
 }
 
-async function loadOutreach() {
+async function loadOutreach(keepFilter = true) {
   const list = $("#outreachList");
-  const stats = $("#outreachStats");
   if (!list) return;
   list.innerHTML = emptyCard("…");
   try {
     const r = await api("/api/outreach");
-    const items = r.items || [];
-    if (stats) {
-      stats.innerHTML = `
-        <span class="tracker-stat">${escapeHtml(t("tracker_total"))} ${r.total || 0}</span>
-        <span class="tracker-stat danger">${escapeHtml(t("tracker_overdue"))} ${r.overdue_count || 0}</span>
-        ${Object.entries(r.by_status || {})
-          .map(
-            ([k, v]) =>
-              `<span class="tracker-stat">${escapeHtml(statusLabel(k))} ${v}</span>`
-          )
-          .join("")}
-      `;
-    }
-    if (!items.length) {
-      list.innerHTML = emptyCard(t("outreach_empty"));
-      return;
-    }
-    const statuses = r.statuses || ["todo", "messaged", "replied", "referred"];
-    list.innerHTML = items
+    outreachCache = r;
+    if (!keepFilter) outreachFilter = "all";
+    renderOutreachUI(r);
+  } catch (e) {
+    list.innerHTML = emptyCard(e.message);
+  }
+}
+
+/** 触达列表 + 顶部筛选芯片（与申请页同样可单独点击） */
+function renderOutreachUI(r) {
+  const list = $("#outreachList");
+  const stats = $("#outreachStats");
+  if (!list || !r) return;
+
+  const allItems = r.items || [];
+  const statuses = r.statuses || ["todo", "messaged", "replied", "referred"];
+
+  if (stats) {
+    const chips = [
+      {
+        key: "all",
+        label: `${t("tracker_total")} ${r.total || 0}`,
+        danger: false,
+      },
+      {
+        key: "overdue",
+        label: `${t("tracker_overdue")} ${r.overdue_count || 0}`,
+        danger: true,
+      },
+      ...Object.entries(r.by_status || {}).map(([k, v]) => ({
+        key: `status:${k}`,
+        label: `${statusLabel(k)} ${v}`,
+        danger: false,
+      })),
+    ];
+    stats.innerHTML = chips
       .map((c) => {
-        const follow = (c.next_follow_up_at || "").slice(0, 10);
-        return `
+        const on = outreachFilter === c.key;
+        return `<button type="button" class="tracker-stat ${
+          c.danger ? "danger" : ""
+        } ${on ? "on" : ""}" data-or-filter="${escapeAttr(c.key)}">${escapeHtml(
+          c.label
+        )}</button>`;
+      })
+      .join("");
+
+    stats.querySelectorAll("[data-or-filter]").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        outreachFilter = btn.getAttribute("data-or-filter") || "all";
+        renderOutreachUI(outreachCache || r);
+      });
+    });
+  }
+
+  let items = allItems;
+  if (outreachFilter === "overdue") {
+    items = allItems.filter((c) => c.overdue);
+  } else if (outreachFilter.startsWith("status:")) {
+    const st = outreachFilter.slice("status:".length);
+    items = allItems.filter((c) => c.status === st);
+  }
+
+  if (!allItems.length) {
+    list.innerHTML = emptyCard(t("outreach_empty"));
+    return;
+  }
+  if (!items.length) {
+    list.innerHTML = emptyCard(t("tracker_filter_empty"));
+    return;
+  }
+
+  list.innerHTML = items
+    .map((c) => {
+      const follow = (c.next_follow_up_at || "").slice(0, 10);
+      return `
       <article class="tracker-card ${c.overdue ? "overdue" : ""}" data-id="${escapeAttr(c.id)}">
         <div class="tracker-card-top">
           <div>
@@ -1920,33 +1977,31 @@ async function loadOutreach() {
           </div>
         </div>
       </article>`;
-      })
-      .join("");
-    list.querySelectorAll(".tracker-card").forEach((card) => {
-      const saveBtn = card.querySelector(".or-save");
-      if (!saveBtn) return;
-      saveBtn.addEventListener("click", async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        try {
-          await api("/api/outreach/" + encodeURIComponent(card.dataset.id), {
-            method: "PATCH",
-            body: JSON.stringify({
-              status: card.querySelector(".or-status").value,
-              next_follow_up_at: card.querySelector(".or-follow").value || null,
-              lang,
-            }),
-          });
-          toast(t("toast_task"));
-          loadOutreach();
-        } catch (err) {
-          toast(err.message, true);
-        }
-      });
+    })
+    .join("");
+
+  list.querySelectorAll(".tracker-card").forEach((card) => {
+    const saveBtn = card.querySelector(".or-save");
+    if (!saveBtn) return;
+    saveBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        await api("/api/outreach/" + encodeURIComponent(card.dataset.id), {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: card.querySelector(".or-status").value,
+            next_follow_up_at: card.querySelector(".or-follow").value || null,
+            lang,
+          }),
+        });
+        toast(t("toast_task"));
+        loadOutreach(true);
+      } catch (err) {
+        toast(err.message, true);
+      }
     });
-  } catch (e) {
-    list.innerHTML = emptyCard(e.message);
-  }
+  });
 }
 
 async function loadTracker(keepFilter = true) {
