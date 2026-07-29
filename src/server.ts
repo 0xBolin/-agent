@@ -167,9 +167,61 @@ function profileHasResume(address: string): boolean {
 /** 软提醒文案：生成链接前建议交简历，不强制、不拦截开通 */
 function resumeSoftReminder(): string {
   return (
-    "【提醒 · 建议先交简历】生成专属链接前，建议先提醒用户提交简历 PDF 做初步识别（POST /api/agent/resume-parse）。" +
-    "简历只能在 Agent 侧提交，职块网页不上传 PDF。用户也可以稍后在专属页再完善；未交简历不影响开通与打开专属链接。"
+    "【提醒 · 建议先交简历】建议提醒用户提交简历 PDF（POST /api/agent/resume-parse，需带 address）。" +
+    "也可开通后再交：同一接口会写回该钱包画像，专属链接不变。专属页 Setup 第 2 步亦可上传 PDF。"
   );
+}
+
+/** 已开通用户的稳定 portalUrl（slug 不因简历更新而变） */
+function portalUrlForAddress(address: string): string | null {
+  try {
+    const u = getOrCreateWalletUser(address);
+    if (u.portal_slug) return portalUrlFor(u.portal_slug);
+  } catch {
+    /* */
+  }
+  return null;
+}
+
+function stripPdfBase64(raw: unknown): string {
+  return String(raw || "").replace(/^data:application\/pdf;base64,/, "").trim();
+}
+
+/**
+ * 解析 PDF 并写入用户画像（2A：覆盖简历相关字段，保留活动城市等非简历字段，见 apply.ts）。
+ * 未开通：写入 resume-pending，unlock 时合并。
+ */
+async function applyResumePdfBuffer(
+  address: string,
+  buf: Buffer
+): Promise<{
+  parsed: Awaited<ReturnType<typeof parseResumePdf>>;
+  saved_to_profile: boolean;
+  pending: boolean;
+  portalUrl: string | null;
+  summary_text: string;
+}> {
+  const parsed = await parseResumePdf(buf);
+  let saved_to_profile = false;
+  let pending = false;
+  if (isEntitled(address)) {
+    await dataContext.run({ userDataDir: ensureUserData(address) }, () => {
+      saveParsedResumeToProfile(parsed);
+      saved_to_profile = true;
+    });
+  } else {
+    const pathPending = pendingResumePath(address);
+    fs.mkdirSync(path.dirname(pathPending), { recursive: true });
+    fs.writeFileSync(pathPending, JSON.stringify(parsed), "utf8");
+    pending = true;
+  }
+  return {
+    parsed,
+    saved_to_profile,
+    pending,
+    portalUrl: portalUrlForAddress(address),
+    summary_text: formatParseSummaryForAgent(parsed),
+  };
 }
 
 function portalInstruction(resume_prefilled: boolean): string {
@@ -582,16 +634,17 @@ async function handleRequest(
       return;
     }
 
-    // Agent：生成链接前先解析 PDF（无需专属页登录）
+    // Agent：解析 PDF；开通前缓存 / 开通后写回同一用户画像（专属链接不变）
     if (p === "/api/agent/resume-parse" && req.method === "POST") {
       try {
         const body = await readJsonBody(req);
-        const b64 = String(body.pdfBase64 || body.pdf || "").replace(
-          /^data:application\/pdf;base64,/,
-          ""
-        );
+        const b64 = stripPdfBase64(body.pdfBase64 || body.pdf);
         if (!b64) {
-          send(res, 400, { error: "请提供 pdfBase64（PDF 文件的 base64）" });
+          send(res, 400, {
+            error: "请提供 pdfBase64（PDF 文件的 base64）",
+            instruction:
+              "Body: { \"address\": \"0x…\", \"pdfBase64\": \"…\" }。address 必填才能写回/缓存。",
+          });
           return;
         }
         const buf = Buffer.from(b64, "base64");
@@ -599,38 +652,51 @@ async function handleRequest(
           send(res, 400, { error: "PDF 请小于 8MB" });
           return;
         }
-        const parsed = await parseResumePdf(buf);
         const address = normalizeAddr(body.address as string | undefined);
-        let saved = false;
-        if (address && isEntitled(address)) {
-          await dataContext.run(
-            { userDataDir: ensureUserData(address) },
-            () => {
-              saveParsedResumeToProfile(parsed);
-              saved = true;
-            }
-          );
-        } else if (address) {
-          // 未开通：解析结果暂存，unlock 时写入
-          const pending = pendingResumePath(address);
-          fs.mkdirSync(path.dirname(pending), { recursive: true });
-          fs.writeFileSync(pending, JSON.stringify(parsed), "utf8");
+        if (!address) {
+          // 无 address：仅解析展示，不落库（避免「只有文本」却以为已写回）
+          const parsed = await parseResumePdf(buf);
+          send(res, 200, {
+            ok: true,
+            parsed,
+            summary_text: formatParseSummaryForAgent(parsed),
+            saved_to_profile: false,
+            pending: false,
+            portalUrl: null,
+            note: "仅返回解析结果，未写入画像。请带 address 重试：已开通则写回专属页；未开通则缓存待 unlock。",
+            instruction:
+              "必须带 address。开通后同一接口会更新简历，portalUrl 不变；请用户刷新/重开同一专属链接。",
+            next_step: "resume_parse_with_address",
+          });
+          return;
         }
+
+        const out = await applyResumePdfBuffer(address, buf);
+        const portalUrl = out.portalUrl;
         send(res, 200, {
           ok: true,
-          parsed,
-          summary_text: formatParseSummaryForAgent(parsed),
-          saved_to_profile: saved,
-          note: saved
-            ? "已写入该钱包用户画像，打开专属页即可看到预填。可继续引导用户付费并 unlock 生成专属链接。"
-            : address
-              ? "已缓存解析结果。建议向用户展示 summary_text 后付费/unlock；开通时将自动写入画像。未 parse 也可直接 unlock。"
-              : "仅返回解析结果；建议带 address 再 parse 以便缓存，或开通时在 unlock 中带上同一 pdfBase64。简历为建议项，不强制。",
-          next_step: saved
-            ? "unlock_or_open_portal"
-            : address
-              ? "confirm_resume_then_unlock"
-              : "resume_parse_with_address",
+          address,
+          parsed: out.parsed,
+          summary_text: out.summary_text,
+          saved_to_profile: out.saved_to_profile,
+          pending: out.pending,
+          portalUrl,
+          resume_prefilled: out.saved_to_profile || out.pending,
+          note: out.saved_to_profile
+            ? portalUrl
+              ? "简历已写入该钱包画像。专属链接不变。请把 portalUrl 展示给用户，并请其刷新或重新打开同一链接查看 Setup 第 2 步。"
+              : "简历已写入画像（已开通但尚未有 portal slug，可再 unlock 取链接）。"
+            : out.pending
+              ? "已缓存解析结果；付费/unlock 开通时将自动写入画像。也可先 unlock 再带 address 调本接口更新。"
+              : "解析完成。",
+          instruction: out.saved_to_profile
+            ? "专属链接不变。向用户展示 summary_text；若有 portalUrl 请用户刷新同一页，勿要求整段粘贴简历。"
+            : "可继续付费 unlock；或用户跳过简历直接开通后再调本接口更新。",
+          next_step: out.saved_to_profile
+            ? portalUrl
+              ? "refresh_same_portal"
+              : "unlock_for_portal"
+            : "confirm_resume_then_unlock",
         });
       } catch (e) {
         send(res, 400, { error: (e as Error).message });
@@ -1803,6 +1869,58 @@ async function expressAuthed(
     res.status(500).json({ error: (e as Error).message });
   }
 }
+
+/** 专属页：上传 PDF 更新简历（写回当前 session 用户，portalUrl 不变） */
+app.post("/api/profile/resume-pdf", (req, res) => {
+  void expressAuthed(req, res, true, async ({ session, body }) => {
+    const b64 = stripPdfBase64(body.pdfBase64 || body.pdf);
+    if (!b64) {
+      res.status(400).json({
+        error: "请提供 pdfBase64",
+        message: "PDF file as base64 (optional data:application/pdf;base64, prefix)",
+      });
+      return;
+    }
+    const buf = Buffer.from(b64, "base64");
+    if (buf.length > 8 * 1024 * 1024) {
+      res.status(400).json({ error: "PDF 请小于 8MB" });
+      return;
+    }
+    // session.userId 即钱包 address（portal 用户）
+    const address =
+      normalizeAddr(session.address) ||
+      normalizeAddr(session.userId) ||
+      String(session.userId || "").toLowerCase();
+    if (!address) {
+      res.status(400).json({ error: "invalid_session_address" });
+      return;
+    }
+    const out = await applyResumePdfBuffer(address, buf);
+    if (!out.saved_to_profile) {
+      // 有 portal session 必已开通；若未 saved 属异常
+      res.status(500).json({
+        error: "save_failed",
+        message: "已登录专属页但未能写入画像，请重试或联系支持。",
+      });
+      return;
+    }
+    // expressAuthed 已进入该用户 dataContext
+    const profile = getProfile();
+    if (!profile) {
+      res.status(500).json({ error: "profile_missing_after_save" });
+      return;
+    }
+    res.status(200).json({
+      ok: true,
+      profile,
+      structured_resume: structuredResumeFromProfile(profile),
+      summary_text: out.summary_text,
+      portalUrl: out.portalUrl || portalUrlForAddress(address),
+      message: "简历已更新。刷新或重新打开同一专属链接即可看到最新预填。",
+      build: BUILD_ID,
+    });
+  });
+});
 
 app.post("/api/profile", (req, res) => {
   void expressAuthed(req, res, true, async ({ session, body }) => {

@@ -221,6 +221,21 @@
   z-index: 5;
 }
 
+/* Resume PDF upload on Setup step 2 */
+.resume-upload-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 0 0 14px;
+}
+.resume-upload-row .btn {
+  flex-shrink: 0;
+}
+.resume-upload-row .small {
+  font-size: 12px;
+}
+
 /* Structured resume summary in Setup */
 .resume-structured {
   border: 1px solid var(--border-soft);

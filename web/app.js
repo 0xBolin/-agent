@@ -65,12 +65,18 @@ const I18N = {
     f_primary_role: "主角色线",
     f_secondary_role: "次角色",
     resume_hint:
-      "简历由你的 Agent 在开通专属链接前解析并预填。此处展示结构化摘要，可确认与微调。",
+      "可通过 Agent 提交 PDF，或在本页上传。更新后同一专属链接即可看到最新预填，无需整段粘贴。",
     resume_empty:
-      "尚未解析到简历摘要。请通过 Agent 提交 PDF 后再打开专属链接。",
+      "尚未解析到简历摘要。请上传 PDF 或通过 Agent 提交。",
     resume_raw_toggle: "完整简历原文（匹配用，可微调）",
     f_resume_raw: "简历原文",
-    ph_resume_raw: "由 Agent 预填",
+    ph_resume_raw: "由 Agent 或本页上传预填",
+    btn_resume_pdf: "上传 PDF 更新简历",
+    resume_pdf_status: "支持文字版 PDF，最大 8MB",
+    toast_resume_uploading: "正在解析 PDF…",
+    toast_resume_updated: "简历已更新，专属链接不变",
+    toast_resume_pdf_type: "请选择 PDF 文件",
+    toast_resume_pdf_size: "PDF 请小于 8MB",
     ph_prefill: "由 Agent 预填",
     f_summary: "简介",
     f_skills: "技能",
@@ -124,7 +130,7 @@ const I18N = {
     events_title: "为你筛选的活动",
     events_lede: "根据活动城市与简历自动匹配。路径报告里也会附带同一批推荐。",
     toast_titles: "请填写目标岗位",
-    toast_resume: "简历尚未预填。请通过 Agent 提交 PDF 后再打开专属链接。",
+    toast_resume: "简历尚未预填。请在本页上传 PDF，或通过 Agent 提交后再生成路径。",
     toast_started: "已开始生成路径",
     toast_example: "已填入示例",
     toast_loaded: "已读取",
@@ -294,12 +300,18 @@ const I18N = {
     f_primary_role: "Primary role",
     f_secondary_role: "Secondary roles",
     resume_hint:
-      "Your Agent parses the PDF before opening the portal. Review the structured summary here.",
+      "Upload a PDF here or via your Agent. The portal link stays the same after updates — no need to paste the whole resume.",
     resume_empty:
-      "No resume summary yet. Submit a PDF via your Agent, then open the portal link.",
+      "No resume summary yet. Upload a PDF here or submit via your Agent.",
     resume_raw_toggle: "Full resume text (used for matching)",
     f_resume_raw: "Resume text",
-    ph_resume_raw: "Prefill from Agent",
+    ph_resume_raw: "Prefill from Agent or upload",
+    btn_resume_pdf: "Upload PDF to update resume",
+    resume_pdf_status: "Text-based PDF, max 8MB",
+    toast_resume_uploading: "Parsing PDF…",
+    toast_resume_updated: "Resume updated — same portal link",
+    toast_resume_pdf_type: "Please choose a PDF file",
+    toast_resume_pdf_size: "PDF must be under 8MB",
     ph_prefill: "Prefill from Agent",
     f_summary: "Summary",
     f_skills: "Skills",
@@ -354,7 +366,7 @@ const I18N = {
     events_lede:
       "Matched from your event cities and resume. Also listed in your Plan.",
     toast_titles: "Add target titles",
-    toast_resume: "Resume not prefilled. Submit PDF via Agent first.",
+    toast_resume: "Resume not prefilled. Upload a PDF here or via your Agent first.",
     toast_started: "Plan generation started",
     toast_example: "Example loaded",
     toast_loaded: "Reloaded",
@@ -2342,6 +2354,71 @@ async function init() {
 
   $("#btnPrev").onclick = () => goStep(step - 1);
   $("#btnNext").onclick = () => goStep(step + 1);
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const r = String(reader.result || "");
+        const i = r.indexOf(",");
+        resolve(i >= 0 ? r.slice(i + 1) : r);
+      };
+      reader.onerror = () => reject(new Error("read_failed"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function uploadResumePdfFile(file) {
+    if (!file) return;
+    const name = (file.name || "").toLowerCase();
+    if (file.type && file.type !== "application/pdf" && !name.endsWith(".pdf")) {
+      toast(t("toast_resume_pdf_type"), true);
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast(t("toast_resume_pdf_size"), true);
+      return;
+    }
+    const btn = $("#btnResumePdf");
+    const status = $("#resumePdfStatus");
+    try {
+      if (btn) btn.disabled = true;
+      if (status) status.textContent = t("toast_resume_uploading");
+      toast(t("toast_resume_uploading"));
+      const pdfBase64 = await fileToBase64(file);
+      const r = await api("/api/profile/resume-pdf", {
+        method: "POST",
+        body: JSON.stringify({ pdfBase64 }),
+      });
+      if (r.profile) {
+        profileToForm(r.profile, r.structured_resume);
+        cachedProfile = r.profile;
+      }
+      if (status) {
+        status.textContent = file.name
+          ? `${file.name} · ${t("toast_resume_updated")}`
+          : t("toast_resume_updated");
+      }
+      toast(t("toast_resume_updated"));
+    } catch (e) {
+      toast(e.message || String(e), true);
+      if (status) status.textContent = t("resume_pdf_status");
+    } finally {
+      if (btn) btn.disabled = false;
+      const input = $("#resumePdfInput");
+      if (input) input.value = "";
+    }
+  }
+
+  const btnResumePdf = $("#btnResumePdf");
+  const resumePdfInput = $("#resumePdfInput");
+  if (btnResumePdf && resumePdfInput) {
+    btnResumePdf.onclick = () => resumePdfInput.click();
+    resumePdfInput.onchange = () => {
+      const f = resumePdfInput.files && resumePdfInput.files[0];
+      if (f) void uploadResumePdfFile(f);
+    };
+  }
 
   $("#btnSave").onclick = async () => {
     try {

@@ -121,10 +121,15 @@
             </div>
             <div class="step-pane" data-step="1">
               <p class="hint hint-below resume-agent-hint" data-i18n="resume_hint">
-                简历由你的 Agent 在开通专属链接前解析并预填。此处展示结构化摘要，可确认与微调。
+                可通过 Agent 提交 PDF，或在本页上传。更新后同一专属链接即可看到最新预填，无需整段粘贴。
               </p>
+              <div class="resume-upload-row">
+                <input type="file" id="resumePdfInput" accept="application/pdf,.pdf" hidden />
+                <button type="button" class="btn secondary" id="btnResumePdf" data-i18n="btn_resume_pdf">上传 PDF 更新简历</button>
+                <span class="muted small" id="resumePdfStatus" data-i18n="resume_pdf_status">支持文字版 PDF，最大 8MB</span>
+              </div>
               <div id="resumeStructured" class="resume-structured">
-                <div class="resume-empty muted" data-i18n="resume_empty">尚未解析到简历摘要。请通过 Agent 提交 PDF 后再打开专属链接。</div>
+                <div class="resume-empty muted" data-i18n="resume_empty">尚未解析到简历摘要。请上传 PDF 或通过 Agent 提交。</div>
               </div>
               <label class="field"><span data-i18n="f_summary">简介</span><input name="summary" data-i18n-placeholder="ph_prefill" placeholder="由 Agent 预填" /></label>
               <label class="field"><span data-i18n="f_skills">技能</span><input name="skills" data-i18n-placeholder="ph_prefill" placeholder="由 Agent 预填" /></label>
@@ -133,7 +138,7 @@
               <details class="resume-raw-details">
                 <summary data-i18n="resume_raw_toggle">完整简历原文（匹配用，可微调）</summary>
                 <label class="field"><span data-i18n="f_resume_raw">简历原文</span>
-                  <textarea name="resume_text" rows="6" class="mono" data-i18n-placeholder="ph_resume_raw" placeholder="由 Agent 预填"></textarea>
+                  <textarea name="resume_text" rows="6" class="mono" data-i18n-placeholder="ph_resume_raw" placeholder="由 Agent 或本页上传预填"></textarea>
                 </label>
               </details>
             </div>
